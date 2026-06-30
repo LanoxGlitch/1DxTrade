@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Deriv Synthetic Indices Scanner</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Header -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-dot"></div>
+      <h1>Deriv Synthetic Scanner</h1>
+    </div>
+
+    <div class="status-cluster">
+      <div id="connStatus" class="conn-status conn-connecting">
+        <span class="conn-dot"></span>
+        <span id="connStatusText">Connecting…</span>
+      </div>
+      <button id="soundToggle" class="icon-btn" title="Toggle alert sound">🔔</button>
+      <button id="notifPermBtn" class="icon-btn" title="Enable browser notifications">🔕</button>
+    </div>
+  </header>
+
+  <!-- Controls -->
+  <section class="controls">
+    <input id="searchInput" type="text" placeholder="Search index (e.g. Volatility 75)…" class="search-input">
+
+    <div class="filter-group" id="filterGroup">
+      <button class="chip active" data-filter="all">All</button>
+      <button class="chip" data-filter="bullish">Bullish (H1/H4)</button>
+      <button class="chip" data-filter="bearish">Bearish (H1/H4)</button>
+      <button class="chip" data-filter="active">Active Signals</button>
+      <button class="chip" data-filter="buy">Buy Signals</button>
+      <button class="chip" data-filter="sell">Sell Signals</button>
+    </div>
+
+    <select id="sortSelect" class="sort-select">
+      <option value="alpha">Sort: Alphabetical</option>
+      <option value="signal">Sort: Active Signal First</option>
+      <option value="buy">Sort: Buy Signals First</option>
+      <option value="sell">Sort: Sell Signals First</option>
+      <option value="h1">Sort: H1 Trend</option>
+      <option value="h4">Sort: H4 Trend</option>
+    </select>
+  </section>
+
+  <!-- Summary cards -->
+  <section class="summary-cards" id="summaryCards">
+    <div class="card">
+      <div class="card-label">Tracked Indices</div>
+      <div class="card-value" id="cardTracked">0</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Connected Feeds</div>
+      <div class="card-value" id="cardConnected">0</div>
+    </div>
+    <div class="card buy-card">
+      <div class="card-label">Active Buy Signals</div>
+      <div class="card-value" id="cardBuy">0</div>
+    </div>
+    <div class="card sell-card">
+      <div class="card-label">Active Sell Signals</div>
+      <div class="card-value" id="cardSell">0</div>
+    </div>
+  </section>
+
+  <!-- Main table -->
+  <section class="table-wrap">
+    <div class="table-scroll">
+      <table id="scannerTable">
+        <thead>
+          <tr>
+            <th>Index</th>
+            <th>Price</th>
+            <th>H1 Bias</th>
+            <th>H4 Bias</th>
+            <th>15m vs 50EMA</th>
+            <th>Signal</th>
+            <th>Signal Time</th>
+            <th>Last Update</th>
+          </tr>
+        </thead>
+        <tbody id="scannerBody">
+          <tr><td colspan="8" class="loading-row">Loading indices…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Signal history -->
+  <section class="history-wrap">
+    <div class="history-header">
+      <h2>Signal History</h2>
+      <button id="clearHistoryBtn" class="icon-btn small">Clear</button>
+    </div>
+    <div class="table-scroll">
+      <table id="historyTable">
+        <thead>
+          <tr>
+            <th>Index</th>
+            <th>Type</th>
+            <th>Time</th>
+            <th>H1 Bias</th>
+            <th>H4 Bias</th>
+            <th>Price</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="6" class="loading-row">No signals yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="footer-note">
+    Data source: Deriv WebSocket API (wss://ws.derivws.com) — live ticks &amp; OHLC candles, no API key required for market data.
+    This tool is for informational purposes only and is not financial advice.
+  </footer>
+
+</div>
+
+<!-- Toast / popup container -->
+<div id="toastContainer" class="toast-container"></div>
+
+<!-- Alert sound -->
+<audio id="alertSound" preload="auto">
+  <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=" type="audio/wav">
+</audio>
+
+<script src="script.js"></script>
+</body>
+</html>
