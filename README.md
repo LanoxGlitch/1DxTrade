@@ -1,1 +1,0 @@
-# Deriv-Scanner-2
