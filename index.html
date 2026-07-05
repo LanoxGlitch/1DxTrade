@@ -1,0 +1,2192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deriv Synthetic Indices — Pullback/Reclaim Scanner</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#111820; --panel2:#0e141b; --border:#1f2b38;
+    --text:#e7edf3; --dim:#8fa3b8; --dimmer:#5c7488;
+    --green:#22c55e; --green-dim:#123420; --red:#ef4444; --red-dim:#3a1418;
+    --amber:#f2b84b; --blue:#3b82f6; --accent:#37e0c0;
+    --mono: ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  body{min-height:100vh;}
+  ::-webkit-scrollbar{height:10px;width:10px;}
+  ::-webkit-scrollbar-thumb{background:#233241;border-radius:6px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  a{color:inherit;}
+  button{font-family:inherit;}
+
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px;border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,#0d131a,#0b0f14);
+    position:sticky;top:0;z-index:20;flex-wrap:wrap;gap:8px;
+  }
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);}
+  .brand h1{font-size:15px;margin:0;font-weight:700;letter-spacing:.3px;}
+  .brand small{color:var(--dim);font-size:11px;display:block;margin-top:1px;}
+
+  .status-strip{display:flex;gap:14px;align-items:center;flex-wrap:wrap;}
+  .pill{
+    display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;
+    background:var(--panel2);border:1px solid var(--border);font-size:12px;color:var(--dim);
+    white-space:nowrap;
+  }
+  .pill b{color:var(--text);font-weight:600;}
+  .pill .led{width:8px;height:8px;border-radius:50%;background:var(--dimmer);}
+  .led.on{background:var(--green);box-shadow:0 0 8px var(--green);}
+  .led.off{background:var(--red);box-shadow:0 0 8px var(--red);}
+  .led.mid{background:var(--amber);box-shadow:0 0 8px var(--amber);}
+
+  .toolbar{
+    display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    padding:10px 16px;border-bottom:1px solid var(--border);background:var(--panel2);
+  }
+  .btn{
+    background:#16202a;border:1px solid var(--border);color:var(--text);
+    padding:7px 12px;border-radius:8px;font-size:12.5px;cursor:pointer;font-weight:600;
+    display:flex;align-items:center;gap:6px;transition:.15s;
+  }
+  .btn:hover{background:#1c2833;border-color:#2c3d4e;}
+  .btn.active{background:#0e2b26;border-color:var(--accent);color:var(--accent);}
+  .btn.small{padding:5px 9px;font-size:11.5px;}
+  .spacer{flex:1;}
+  .search{
+    background:#0e141b;border:1px solid var(--border);color:var(--text);
+    padding:7px 10px;border-radius:8px;font-size:12.5px;min-width:160px;
+  }
+  .search::placeholder{color:var(--dimmer);}
+
+  main{padding:14px 16px 60px;max-width:1600px;margin:0 auto;}
+
+  .stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;}
+  .stat-card{
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px;
+  }
+  .stat-card .label{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px;}
+  .stat-card .value{font-size:22px;font-weight:700;font-family:var(--mono);}
+  .stat-card .value.buy{color:var(--green);}
+  .stat-card .value.sell{color:var(--red);}
+  .stat-card .value.accent{color:var(--accent);}
+
+  .panel{
+    background:var(--panel);border:1px solid var(--border);border-radius:12px;
+    margin-bottom:16px;overflow:hidden;
+  }
+  .panel-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 14px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap;
+  }
+  .panel-head h2{font-size:13px;margin:0;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);font-weight:700;}
+  .panel-body{overflow-x:auto;}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:1180px;}
+  thead th{
+    text-align:left;padding:9px 10px;background:var(--panel2);color:var(--dim);
+    font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;
+    border-bottom:1px solid var(--border);position:sticky;top:0;white-space:nowrap;cursor:pointer;
+  }
+  thead th:hover{color:var(--text);}
+  tbody td{padding:9px 10px;border-bottom:1px solid #17222c;white-space:nowrap;font-family:var(--mono);}
+  tbody tr{transition:background .2s;cursor:pointer;}
+  tbody tr:hover{background:#101821;}
+  tbody tr.flash-buy{animation:flashBuy 1.4s ease-out 2;}
+  tbody tr.flash-sell{animation:flashSell 1.4s ease-out 2;}
+  @keyframes flashBuy{0%{background:var(--green-dim);}100%{background:transparent;}}
+  @keyframes flashSell{0%{background:var(--red-dim);}100%{background:transparent;}}
+
+  .sym-name{font-family:var(--sans);font-weight:700;color:var(--text);}
+  .sym-code{color:var(--dimmer);font-size:10.5px;display:block;font-family:var(--mono);}
+
+  .badge{
+    display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:6px;
+    font-size:11px;font-weight:700;font-family:var(--sans);
+  }
+  .badge.bull{background:var(--green-dim);color:var(--green);}
+  .badge.bear{background:var(--red-dim);color:var(--red);}
+  .badge.mixed{background:#2a2410;color:var(--amber);}
+  .badge.armed-buy{background:var(--green-dim);color:var(--green);box-shadow:0 0 0 1px #1f5a37 inset;}
+  .badge.armed-sell{background:var(--red-dim);color:var(--red);box-shadow:0 0 0 1px #6b2229 inset;}
+  .badge.wait{background:#151f28;color:var(--dim);}
+  .badge.dot-on::before{content:"●";margin-right:3px;font-size:8px;}
+  .conn-ok{color:var(--green);} .conn-bad{color:var(--red);} .conn-mid{color:var(--amber);}
+
+  .sig-buy{color:var(--green);font-weight:700;}
+  .sig-sell{color:var(--red);font-weight:700;}
+  .sig-none{color:var(--dimmer);}
+
+  .empty{padding:30px;text-align:center;color:var(--dimmer);font-size:12.5px;}
+
+  /* Settings drawer */
+  .drawer-overlay{
+    position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40;display:none;
+  }
+  .drawer-overlay.show{display:block;}
+  .drawer{
+    position:fixed;top:0;right:-420px;width:400px;max-width:92vw;height:100vh;
+    background:var(--panel);border-left:1px solid var(--border);z-index:41;
+    transition:right .25s ease;overflow-y:auto;
+  }
+  .drawer.show{right:0;}
+  .drawer-head{
+    padding:16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;
+    position:sticky;top:0;background:var(--panel);
+  }
+  .drawer-head h2{margin:0;font-size:15px;}
+  .drawer-body{padding:16px;}
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px;font-weight:600;}
+  .field .hint{font-size:11px;color:var(--dimmer);margin-top:4px;}
+  .field input[type=number], .field input[type=text]{
+    width:100%;background:#0e141b;border:1px solid var(--border);color:var(--text);
+    padding:8px 10px;border-radius:7px;font-family:var(--mono);font-size:13px;
+  }
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #17222c;}
+  .toggle-row .t-label{font-size:12.5px;font-weight:600;}
+  .toggle-row .t-sub{font-size:11px;color:var(--dimmer);margin-top:2px;}
+  .switch{position:relative;width:40px;height:22px;flex:0 0 auto;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider{position:absolute;inset:0;background:#1e2b38;border-radius:22px;cursor:pointer;transition:.2s;}
+  .slider::before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:#8fa3b8;border-radius:50%;transition:.2s;}
+  input:checked + .slider{background:#0e3b2f;}
+  input:checked + .slider::before{transform:translateX(18px);background:var(--accent);}
+  select{
+    width:100%;background:#0e141b;border:1px solid var(--border);color:var(--text);
+    padding:8px 10px;border-radius:7px;font-size:13px;
+  }
+
+  /* Debug / signal modal */
+  .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;display:none;align-items:center;justify-content:center;padding:16px;}
+  .modal-overlay.show{display:flex;}
+  .modal{
+    background:var(--panel);border:1px solid var(--border);border-radius:12px;max-width:520px;width:100%;
+    max-height:86vh;overflow-y:auto;
+  }
+  .modal-head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+  .modal-head h3{margin:0;font-size:14px;}
+  .modal-body{padding:16px;font-size:13px;}
+  .debug-line{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #17222c;font-family:var(--mono);font-size:12.5px;}
+  .debug-line .k{color:var(--dim);font-family:var(--sans);}
+  .ok-tick{color:var(--green);} .bad-x{color:var(--red);}
+  .status-line{margin-top:12px;padding:10px 12px;border-radius:8px;background:#0e141b;border:1px solid var(--border);font-size:12.5px;}
+  .status-line.blocked{border-color:#5a2229;}
+  .status-line.armed{border-color:#1f5a37;}
+  .close-x{background:none;border:none;color:var(--dim);font-size:20px;cursor:pointer;line-height:1;}
+  .close-x:hover{color:var(--text);}
+
+  footer{padding:20px;text-align:center;color:var(--dimmer);font-size:11px;}
+
+  @media (max-width: 720px){
+    .drawer{width:100vw;max-width:100vw;right:-100vw;}
+    .status-strip{gap:8px;}
+    .stats-row{grid-template-columns:repeat(2,1fr);}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="dot" id="connDot"></div>
+    <div>
+      <h1>Indices Scanner</h1>
+      <small>1DxTrade Engine</small>
+    </div>
+  </div>
+  <div class="status-strip">
+    <div class="pill"><span class="led off" id="wsLed"></span> WS: <b id="wsStatus">Connecting…</b></div>
+    <div class="pill">Symbols: <b id="statSymbols">0</b></div>
+    <div class="pill">Last scan: <b id="statLastScan">—</b></div>
+    <div class="pill"><span class="led off" id="cloudLed"></span> Cloud: <b id="cloudStatus">—</b></div>
+    <div class="pill"><span class="led off" id="tgLed"></span> Telegram: <b id="tgStatus">—</b></div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button class="btn active" id="tabScanner" onclick="setTab('scanner')">📡 Scanner</button>
+  <button class="btn" id="tabHistory" onclick="setTab('history')">🕘 History</button>
+  <input class="search" id="symSearch" placeholder="Filter symbol…" oninput="onSearchInput()">
+  <div class="spacer"></div>
+  <button class="btn small" id="debugToggleBtn" onclick="toggleDebugMode()">🐞 Debug: OFF</button>
+  <button class="btn small" onclick="openSettings()">⚙️ Settings</button>
+</div>
+
+<main>
+  <div class="stats-row">
+    <div class="stat-card"><div class="label">Total Scanned</div><div class="value accent" id="cardTotal">0</div></div>
+    <div class="stat-card"><div class="label">Buy Armed</div><div class="value buy" id="cardBuyArmed">0</div></div>
+    <div class="stat-card"><div class="label">Sell Armed</div><div class="value sell" id="cardSellArmed">0</div></div>
+    <div class="stat-card"><div class="label">Signals Today</div><div class="value accent" id="cardSignalsToday">0</div></div>
+  </div>
+
+  <div class="panel" id="scannerPanel">
+    <div class="panel-head">
+      <h2>Live Scanner</h2>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span style="font-size:11px;color:var(--dimmer);">Click a row for debug detail</span>
+      </div>
+    </div>
+    <div class="panel-body">
+      <table id="scanTable">
+        <thead>
+          <tr>
+            <th onclick="sortBy('label')">Symbol</th>
+            <th onclick="sortBy('price')">Price</th>
+            <th onclick="sortBy('h1')">H1 Trend</th>
+            <th onclick="sortBy('h4')">H4 Trend</th>
+            <th>M15 Status</th>
+            <th>Buy Armed</th>
+            <th>Sell Armed</th>
+            <th>Buy Signal</th>
+            <th>Sell Signal</th>
+            <th>Last Signal</th>
+            <th>Signal Time</th>
+            <th>Entry Price</th>
+            <th onclick="sortBy('atr')">ATR</th>
+            <th>Dist. EMA</th>
+            <th>Conn</th>
+          </tr>
+        </thead>
+        <tbody id="scanBody">
+          <tr><td colspan="15" class="empty">Resolving symbols from Deriv active_symbols…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel" id="historyPanel" style="display:none;">
+    <div class="panel-head">
+      <h2>Signal History <span id="historySourceStatus" style="color:var(--dimmer);font-weight:400;">—</span></h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <input class="search" id="historySearch" placeholder="Search symbol…" oninput="onHistorySearchInput()">
+        <select id="historyDirFilter" style="width:auto;padding:7px 10px;font-size:12.5px;" onchange="onHistoryFilterChange()">
+          <option value="all">All directions</option>
+          <option value="buy">Buy only</option>
+          <option value="sell">Sell only</option>
+        </select>
+        <button class="btn small" onclick="refreshHistory()">↻ Refresh</button>
+        <button class="btn small" onclick="clearHistory()">Clear</button>
+      </div>
+    </div>
+    <div class="stats-row" style="margin:12px 14px 0;">
+      <div class="stat-card"><div class="label">Showing</div><div class="value accent" id="histStatShown">0</div></div>
+      <div class="stat-card"><div class="label">Buy Signals</div><div class="value buy" id="histStatBuy">0</div></div>
+      <div class="stat-card"><div class="label">Sell Signals</div><div class="value sell" id="histStatSell">0</div></div>
+      <div class="stat-card"><div class="label">Today</div><div class="value accent" id="histStatToday">0</div></div>
+    </div>
+    <div class="panel-body">
+      <table>
+        <thead>
+          <tr><th>Symbol</th><th>Direction</th><th>Entry Price</th><th>Signal Time</th><th>H1 Trend</th><th>H4 Trend</th></tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="6" class="empty">Loading history…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="hint" style="padding:0 14px 14px;">"Clear" only clears your local view/cache — it does not delete rows from Supabase. Use "Refresh" to reload from the cloud.</div>
+  </div>
+</main>
+
+<footer>WebSocket · 1DxTrade Engine · Data delayed only by network latency</footer>
+
+<!-- Settings Drawer -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="closeSettings()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h2>Settings</h2>
+    <button class="close-x" onclick="closeSettings()">✕</button>
+  </div>
+  <div class="drawer-body">
+    <div class="field">
+      <label>EMA 20 Length</label>
+      <input type="number" id="cfgEma20" min="2" max="100">
+    </div>
+    <div class="field">
+      <label>EMA 50 Length</label>
+      <input type="number" id="cfgEma50" min="2" max="200">
+    </div>
+    <div class="field">
+      <label>EMA 200 Length</label>
+      <input type="number" id="cfgEma200" min="2" max="400">
+    </div>
+    <div class="field">
+      <label>ATR Period</label>
+      <input type="number" id="cfgAtrPeriod" min="2" max="100">
+    </div>
+    <div class="field">
+      <label>ATR Multiplier (min pullback distance)</label>
+      <input type="number" id="cfgAtrMult" min="0.1" step="0.1">
+    </div>
+    <div class="field">
+      <label>Minimum Pullback Candles</label>
+      <input type="number" id="cfgMinPullback" min="1" max="10">
+    </div>
+    <div class="field">
+      <label>Scan / Render Speed</label>
+      <select id="cfgScanSpeed">
+        <option value="1000">Fast (1s)</option>
+        <option value="2000">Normal (2s)</option>
+        <option value="5000">Relaxed (5s)</option>
+      </select>
+    </div>
+
+    <div class="toggle-row">
+      <div>
+        <div class="t-label">Allow Mixed H1 Trend</div>
+        <div class="t-sub">H4 must still align; H1 may be Mixed</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="cfgAllowMixedH1"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div>
+        <div class="t-label">Notification Sound</div>
+        <div class="t-sub">Play a tone on new signal</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="cfgSoundOn" checked><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div>
+        <div class="t-label">Browser Notifications</div>
+        <div class="t-sub">Requires permission</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="cfgNotifyOn"><span class="slider"></span></label>
+    </div>
+
+    <div class="field" style="margin-top:16px;">
+      <label>Enabled Symbols</label>
+      <div id="cfgSymbolList" style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px;padding:4px 10px;background:#0e141b;"></div>
+      <div class="hint">Unchecked symbols are hidden from the scanner table. Choices are saved automatically.</div>
+    </div>
+
+    <div class="field" style="margin-top:16px;">
+      <button class="btn" style="width:100%;justify-content:center;" onclick="applySettings()">Apply Changes</button>
+    </div>
+    <div class="hint">Changes apply immediately to all future candle closes — no refresh needed. All settings are saved automatically and restored on your next visit.</div>
+  </div>
+</div>
+
+<!-- Debug Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this) closeModal()">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Symbol Detail</h3>
+      <button class="close-x" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* =============================================================================
+   SECTION: CONFIG
+   Static app configuration + user-tunable settings (CFG is mutated by Settings)
+   ============================================================================= */
+const APP_ID = 1089; // Deriv public demo app id (no auth required for market data)
+const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
+
+const GRAN = { M15: 900, H1: 3600, H4: 14400 };
+const HISTORY_COUNT = 300; // enough seed for EMA200
+
+// Identifies which version of the pullback/reclaim strategy produced a
+// signal — stored alongside every row in Supabase so historical signals
+// remain attributable even after the rules above evolve.
+const STRATEGY_VERSION = 'pullback-reclaim-v1';
+
+// Fill these in with your own Supabase project's values (Project Settings ->
+// API). The anon/public key is safe to expose client-side as long as Row
+// Level Security is configured on the `signals` table (see the accompanying
+// signals.sql for a policy that allows inserts only).
+const SUPABASE_URL = 'https://YOUR-PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-ANON-PUBLIC-KEY';
+
+// Telegram notifications are sent by a Supabase Edge Function
+// (supabase/functions/notify-telegram), never from this page. This is just
+// the function's public invoke URL — it carries no secret. The bot token
+// lives ONLY in that function's server-side secrets
+// (`supabase secrets set TELEGRAM_BOT_TOKEN=...`) and never touches the
+// client. Leave this derived from SUPABASE_URL unless you deployed the
+// function somewhere else.
+const TELEGRAM_NOTIFY_URL = `${SUPABASE_URL}/functions/v1/notify-telegram`;
+
+const CFG = {
+  ema20: 20, ema50: 50, ema200: 200,
+  atrPeriod: 14, atrMult: 1.0,
+  minPullback: 3,
+  allowMixedH1: false,
+  soundOn: true, notifyOn: false,
+  scanSpeed: 2000
+};
+
+// Which synthetic indices we want (by classified type + number)
+const WHITELIST = {
+  volatility: [10, 25, 50, 75, 100],       // both standard + 1s variants wanted
+  volatilityWide: [150, 200, 250],          // include whichever variant Deriv exposes
+  jump: [10, 25, 50, 75, 100],
+  stepMax: 5                                // take up to 5 Step Index instruments found
+};
+
+/* =============================================================================
+   SECTION: STATE
+   Single source of truth for all mutable runtime state.
+   ============================================================================= */
+const State = {
+  ws: null,
+  wsConnected: false,
+  reconnectAttempts: 0,
+  reconnectTimer: null,
+
+  SYMBOLS: [],   // [{symbol, label}]
+  DATA: {},      // symbol -> full data object (see DataModel.init)
+  requestQueue: [],
+  queueRunning: false,
+
+  currentTab: 'scanner',
+  debugMode: false,
+  sortState: { key: 'label', dir: 1 },
+  searchText: '',
+
+  // Symbols the user has explicitly turned off in Settings. Anything NOT in
+  // this set is considered enabled (so newly-resolved symbols default on).
+  disabledSymbols: new Set(),
+
+  historyList: [],
+  signalsToday: 0,
+  lastHistoryResetDate: new Date().toDateString(),
+
+  // Set of symbols whose row needs a DOM refresh on next render pass
+  dirtyRows: new Set(),
+  tableBuilt: false
+};
+
+/* =============================================================================
+   SECTION: PERSISTENCE
+   Everything the user can configure — scanner thresholds, notification
+   preferences, enabled/disabled symbols, and UI state (active tab, debug
+   mode, sort order, search filter) — is mirrored to localStorage so a page
+   refresh never loses settings. Reads/writes are wrapped in try/catch since
+   localStorage can throw in locked-down/privacy-mode browsers; in that case
+   the app simply falls back to in-memory defaults for the session.
+   ============================================================================= */
+const Storage = (() => {
+  const STORAGE_KEY = 'derivScanner.settings.v1';
+  let saveQueued = false;
+
+  function safeGet() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function safeSet(obj) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
+    } catch (e) {
+      // storage unavailable/full — fail silently, app still works this session
+    }
+  }
+
+  // Load persisted CFG values as early as possible (before anything else
+  // reads CFG), so every module sees restored settings from the start.
+  function loadConfigOnly() {
+    const saved = safeGet();
+    if (saved && saved.cfg) Object.assign(CFG, saved.cfg);
+    if (saved && Array.isArray(saved.disabledSymbols)) {
+      State.disabledSymbols = new Set(saved.disabledSymbols);
+    }
+  }
+
+  // Restore UI-level preferences once the DOM/State modules are ready.
+  function restoreUiPrefs() {
+    const saved = safeGet();
+    const ui = (saved && saved.ui) || {};
+    State.currentTab = ui.tab || State.currentTab;
+    State.debugMode = !!ui.debugMode;
+    if (ui.sortState && ui.sortState.key) State.sortState = ui.sortState;
+    State.searchText = ui.searchText || '';
+
+    const searchEl = document.getElementById('symSearch');
+    if (searchEl) searchEl.value = State.searchText;
+
+    History.restoreUiPrefs(ui);
+
+    const debugBtn = document.getElementById('debugToggleBtn');
+    if (debugBtn) {
+      debugBtn.textContent = `🐞 Debug: ${State.debugMode ? 'ON' : 'OFF'}`;
+      debugBtn.classList.toggle('active', State.debugMode);
+    }
+
+    UI.setTab(State.currentTab === 'history' ? 'history' : 'scanner');
+  }
+
+  // Persist current CFG + disabledSymbols + UI prefs. Cheap enough to call
+  // on every change; coalesced via a microtask so a burst of rapid changes
+  // (e.g. a checkbox list) only writes once.
+  function save() {
+    if (saveQueued) return;
+    saveQueued = true;
+    Promise.resolve().then(() => {
+      saveQueued = false;
+      const searchEl = document.getElementById('symSearch');
+      const payload = {
+        cfg: CFG,
+        disabledSymbols: Array.from(State.disabledSymbols),
+        ui: {
+          tab: State.currentTab,
+          debugMode: State.debugMode,
+          sortState: State.sortState,
+          searchText: searchEl ? searchEl.value : State.searchText,
+          ...History.uiPrefsForSave()
+        }
+      };
+      safeSet(payload);
+    });
+  }
+
+  return { loadConfigOnly, restoreUiPrefs, save };
+})();
+
+// Restore CFG + disabled symbols immediately — must happen before any other
+// module (Indicators, Settings, UI) reads CFG for the first time.
+Storage.loadConfigOnly();
+
+/* =============================================================================
+   SECTION: UTILS
+   Small, pure helper functions shared across modules (no duplication elsewhere)
+   ============================================================================= */
+const Utils = (() => {
+  function fmtPrice(p, digits) {
+    if (p === null || p === undefined || isNaN(p)) return '—';
+    return Number(p).toFixed(digits || 4);
+  }
+
+  function fmtTime(ts) {
+    if (!ts) return '—';
+    return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function nowMs() { return Date.now(); }
+
+  // Centralized so digit precision logic isn't duplicated across renderers
+  function digitsForPrice(price) {
+    if (price === null || price === undefined) return 4;
+    return price < 10 ? 5 : (price < 1000 ? 3 : 2);
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  return { fmtPrice, fmtTime, nowMs, digitsForPrice, escapeHtml };
+})();
+
+/* =============================================================================
+   SECTION: AUDIO / NOTIFICATIONS
+   ============================================================================= */
+const Alerts = (() => {
+  let audioCtx = null;
+
+  function tone(freq, startGain, ctx, delayMs) {
+    setTimeout(() => {
+      try {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'sine';
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(startGain, ctx.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.32);
+        o.connect(g); g.connect(ctx.destination);
+        o.start(); o.stop(ctx.currentTime + 0.35);
+      } catch (e) { /* audio unavailable */ }
+    }, delayMs);
+  }
+
+  function playBeep(kind) {
+    if (!CFG.soundOn) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      tone(kind === 'buy' ? 880 : 440, 0.25, audioCtx, 0);
+      tone(kind === 'buy' ? 1040 : 330, 0.2, audioCtx, 160);
+    } catch (e) { /* audio unavailable */ }
+  }
+
+  function notify(title, body) {
+    if (!CFG.notifyOn) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      try { new Notification(title, { body }); } catch (e) {}
+    }
+  }
+
+  return { playBeep, notify };
+})();
+
+/* =============================================================================
+   SECTION: SUPABASE SYNC
+   Persists every confirmed signal to a Supabase `signals` table. Fully
+   decoupled from the scanning/signal-generation logic: this module never
+   influences arming/firing decisions, it only ever *records* a signal that
+   has already fired.
+
+   Reliability contract:
+   - Confirmed signals are written to a localStorage-backed queue FIRST,
+     synchronously, before any network attempt — so a page crash, refresh,
+     or Supabase outage can never lose a confirmed signal.
+   - Failed inserts stay queued and are retried with exponential backoff,
+     plus opportunistically on a fixed interval and when the browser regains
+     connectivity (`online` event).
+   - Scanning, rendering, and signal generation continue normally regardless
+     of Supabase's availability — network calls here are always fire-and-
+     forget from the scanner's perspective.
+   ============================================================================= */
+const SupabaseSync = (() => {
+  const QUEUE_KEY = 'derivScanner.signalQueue.v1';
+  const MAX_BACKOFF_MS = 60000;
+
+  let client = null;
+  let clientInitAttempted = false;
+  let retryTimer = null;
+  let backoffMs = 2000;
+  let flushing = false;
+
+  function isConfigured() {
+    return SUPABASE_URL && SUPABASE_ANON_KEY &&
+      !SUPABASE_URL.includes('YOUR-PROJECT') && !SUPABASE_ANON_KEY.includes('YOUR-ANON');
+  }
+
+  function getClient() {
+    if (client) return client;
+    if (clientInitAttempted) return null;
+    clientInitAttempted = true;
+    if (!isConfigured()) {
+      console.warn('[SupabaseSync] SUPABASE_URL / SUPABASE_ANON_KEY not configured — signals will queue locally but will not sync until credentials are set.');
+      return null;
+    }
+    if (typeof window.supabase === 'undefined' || !window.supabase.createClient) {
+      console.warn('[SupabaseSync] Supabase client library failed to load — signals will queue locally and retry.');
+      return null;
+    }
+    try {
+      client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      return client;
+    } catch (e) {
+      console.warn('[SupabaseSync] Failed to initialize Supabase client:', e);
+      return null;
+    }
+  }
+
+  function loadQueue() {
+    try {
+      const raw = localStorage.getItem(QUEUE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveQueue(queue) {
+    try {
+      localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+    } catch (e) {
+      // If localStorage itself is unavailable there's nowhere durable left to
+      // put it; the in-memory attempt below is still made this session.
+    }
+  }
+
+  function toRow(sig) {
+    return {
+      symbol: sig.symbol,
+      direction: sig.direction,
+      entry_price: sig.price,
+      signal_time: new Date(sig.time).toISOString(),
+      h1_trend: sig.h1,
+      h4_trend: sig.h4,
+      atr: sig.atr !== undefined ? sig.atr : null,
+      ema_distance: sig.emaDistance !== undefined ? sig.emaDistance : null,
+      strategy_version: STRATEGY_VERSION,
+      scanner_timestamp: new Date().toISOString()
+    };
+  }
+
+  // Called by the signal engine the instant a signal fires. Queues durably
+  // first, then attempts an immediate flush.
+  function recordSignal(sig) {
+    const queue = loadQueue();
+    queue.push({ row: toRow(sig), queuedAt: Utils.nowMs() });
+    saveQueue(queue);
+    flushQueue();
+  }
+
+  function scheduleRetry() {
+    if (retryTimer) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      flushQueue();
+    }, backoffMs);
+    backoffMs = Math.min(backoffMs * 1.8, MAX_BACKOFF_MS);
+  }
+
+  async function flushQueue() {
+    if (flushing) return;
+    const sb = getClient();
+    if (!sb) { scheduleRetry(); return; }
+
+    let queue = loadQueue();
+    if (queue.length === 0) return;
+
+    flushing = true;
+    try {
+      // Insert in original (oldest-first) order so history stays chronological.
+      while (queue.length > 0) {
+        const item = queue[0];
+        const { error } = await sb.from('signals').insert(item.row);
+        if (error) {
+          // Postgres unique_violation (23505) on (symbol, direction, signal_time)
+          // means this exact signal already made it into the table on a
+          // previous attempt whose success response we never saw (e.g. the
+          // connection dropped after the write committed). That's not a
+          // failure — treat it as done so we don't retry forever, and so
+          // notify-telegram's lookup finds exactly one row either way.
+          if (error.code === '23505') {
+            console.warn('[SupabaseSync] Row already existed (duplicate signal_time), treating as synced.');
+            queue.shift();
+            saveQueue(queue);
+            continue;
+          }
+          console.warn('[SupabaseSync] Insert failed, will retry:', error.message || error);
+          scheduleRetry();
+          break;
+        }
+        queue.shift();
+        saveQueue(queue); // persist progress after each successful insert
+      }
+      if (queue.length === 0) {
+        backoffMs = 2000; // reset backoff once fully caught up
+      }
+    } catch (e) {
+      console.warn('[SupabaseSync] Network/client error, will retry:', e);
+      scheduleRetry();
+    } finally {
+      flushing = false;
+    }
+  }
+
+  function pendingCount() {
+    return loadQueue().length;
+  }
+
+  // Read path — used by History to populate the log on startup and on
+  // manual refresh. Fully independent of the write/queue path above.
+  async function fetchSignals(limit) {
+    const sb = getClient();
+    if (!sb) return { data: null, error: new Error('Supabase not configured or client unavailable') };
+    try {
+      const { data, error } = await sb
+        .from('signals')
+        .select('*')
+        .order('signal_time', { ascending: false })
+        .limit(limit || 500);
+      return { data, error };
+    } catch (e) {
+      return { data: null, error: e };
+    }
+  }
+
+  function updateStatusUi() {
+    const led = document.getElementById('cloudLed');
+    const label = document.getElementById('cloudStatus');
+    if (!led || !label) return;
+    const pending = pendingCount();
+    led.classList.remove('on', 'off', 'mid');
+    if (!isConfigured()) {
+      led.classList.add('off');
+      label.textContent = 'Not configured';
+    } else if (pending === 0) {
+      led.classList.add('on');
+      label.textContent = 'Synced';
+    } else {
+      led.classList.add('mid');
+      label.textContent = `${pending} pending`;
+    }
+  }
+
+  // Opportunistic retries: periodic sweep + immediate attempt on reconnect.
+  setInterval(flushQueue, 30000);
+  setInterval(updateStatusUi, 2000);
+  window.addEventListener('online', flushQueue);
+
+  return { recordSignal, flushQueue, pendingCount, isConfigured, updateStatusUi, fetchSignals };
+})();
+
+/* =============================================================================
+   SECTION: TELEGRAM NOTIFY
+   Sends exactly one Telegram notification per confirmed signal, without ever
+   holding the bot token client-side. This module only knows the public
+   invoke URL of a Supabase Edge Function (notify-telegram); the token lives
+   solely in that function's server-side secrets.
+
+   Reliability contract (mirrors SupabaseSync's queue, kept independent so a
+   Telegram outage never affects Supabase persistence or vice versa):
+   - Every fired signal is queued durably to localStorage FIRST, before any
+     network attempt.
+   - The client identifies a signal to the function only by
+     (symbol, direction, signal_time) — the same triple that's UNIQUE on the
+     `signals` table — never by trusting locally-held price/trend data for
+     the actual message content. The function itself looks up the row and
+     decides whether it's already been notified, which is what guarantees
+     no duplicate is ever sent even if this queue retries the same job
+     several times (lost responses, page reloads, etc.).
+   - Failed calls stay queued and retry with exponential backoff, plus a
+     periodic sweep and an immediate attempt on regained connectivity.
+   ============================================================================= */
+const TelegramNotify = (() => {
+  const QUEUE_KEY = 'derivScanner.telegramQueue.v1';
+  const MAX_BACKOFF_MS = 60000;
+
+  let retryTimer = null;
+  let backoffMs = 2000;
+  let flushing = false;
+
+  function isConfigured() {
+    return !!TELEGRAM_NOTIFY_URL && !SUPABASE_URL.includes('YOUR-PROJECT');
+  }
+
+  function loadQueue() {
+    try {
+      const raw = localStorage.getItem(QUEUE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveQueue(queue) {
+    try {
+      localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+    } catch (e) {
+      // localStorage unavailable — the in-memory attempt below still happens
+      // this session, but won't survive a refresh.
+    }
+  }
+
+  function toJob(sig) {
+    // Only the identifying triple is sent — the function re-derives the
+    // message content from its own copy of the row, so a tampered/queued
+    // client can't influence what actually gets sent to Telegram.
+    return {
+      symbol: sig.symbol,
+      direction: sig.direction,
+      signal_time: new Date(sig.time).toISOString()
+    };
+  }
+
+  // Called by the signal engine the instant a signal fires. Queues durably
+  // first, then attempts an immediate flush. Deliberately decoupled from
+  // SupabaseSync — if the Supabase row hasn't landed yet by the time this
+  // flushes, the function responds 409 and this queue simply retries later.
+  function recordSignal(sig) {
+    const queue = loadQueue();
+    queue.push({ job: toJob(sig), queuedAt: Utils.nowMs() });
+    saveQueue(queue);
+    flushQueue();
+  }
+
+  function scheduleRetry() {
+    if (retryTimer) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      flushQueue();
+    }, backoffMs);
+    backoffMs = Math.min(backoffMs * 1.8, MAX_BACKOFF_MS);
+  }
+
+  async function sendOne(job) {
+    const resp = await fetch(TELEGRAM_NOTIFY_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+      },
+      body: JSON.stringify(job)
+    });
+    // 200 = sent (or already-notified, which counts as done — no duplicate).
+    // 409 = the Supabase row isn't there yet; worth retrying shortly.
+    // Anything else = treat as a failure and retry with backoff.
+    if (resp.ok) return { done: true };
+    if (resp.status === 409) return { done: false, retryable: true };
+    return { done: false, retryable: true, status: resp.status };
+  }
+
+  async function flushQueue() {
+    if (flushing) return;
+    if (!isConfigured()) { scheduleRetry(); return; }
+
+    let queue = loadQueue();
+    if (queue.length === 0) return;
+
+    flushing = true;
+    try {
+      // Oldest first, so notifications arrive in the order signals fired.
+      while (queue.length > 0) {
+        const item = queue[0];
+        let result;
+        try {
+          result = await sendOne(item.job);
+        } catch (e) {
+          console.warn('[TelegramNotify] Network error, will retry:', e);
+          scheduleRetry();
+          break;
+        }
+        if (!result.done) {
+          console.warn('[TelegramNotify] Notify not completed yet, will retry:', result.status || 'row not found yet');
+          scheduleRetry();
+          break;
+        }
+        queue.shift();
+        saveQueue(queue); // persist progress after each successful notify
+      }
+      if (queue.length === 0) {
+        backoffMs = 2000; // reset backoff once fully caught up
+      }
+    } finally {
+      flushing = false;
+    }
+  }
+
+  function pendingCount() {
+    return loadQueue().length;
+  }
+
+  function updateStatusUi() {
+    const led = document.getElementById('tgLed');
+    const label = document.getElementById('tgStatus');
+    if (!led || !label) return;
+    const pending = pendingCount();
+    led.classList.remove('on', 'off', 'mid');
+    if (!isConfigured()) {
+      led.classList.add('off');
+      label.textContent = 'Not configured';
+    } else if (pending === 0) {
+      led.classList.add('on');
+      label.textContent = 'Synced';
+    } else {
+      led.classList.add('mid');
+      label.textContent = `${pending} pending`;
+    }
+  }
+
+  // Opportunistic retries: periodic sweep + immediate attempt on reconnect.
+  setInterval(flushQueue, 30000);
+  setInterval(updateStatusUi, 2000);
+  window.addEventListener('online', flushQueue);
+
+  return { recordSignal, flushQueue, pendingCount, isConfigured, updateStatusUi };
+})();
+
+
+/* =============================================================================
+   SECTION: SYMBOL RESOLUTION
+   Dynamic resolution via active_symbols — never hardcode Deriv codes.
+   ============================================================================= */
+const SymbolResolver = (() => {
+  function classifySymbol(entry) {
+    const name = entry.display_name || '';
+    const market = entry.market || '';
+    if (market !== 'synthetic_index') return null;
+
+    let m;
+    if ((m = name.match(/^Volatility\s+(\d+(?:\.\d+)?)\s*\(1s\)\s*Index$/i))) {
+      return { type: 'volatility', oneSec: true, num: parseFloat(m[1]) };
+    }
+    if ((m = name.match(/^Volatility\s+(\d+(?:\.\d+)?)\s*Index$/i))) {
+      return { type: 'volatility', oneSec: false, num: parseFloat(m[1]) };
+    }
+    if ((m = name.match(/^Jump\s+(\d+)\s*Index$/i))) {
+      return { type: 'jump', oneSec: false, num: parseInt(m[1], 10) };
+    }
+    if ((m = name.match(/^Step\s+Index\s*(\d+)?$/i))) {
+      return { type: 'step', oneSec: false, num: m[1] ? parseInt(m[1], 10) : 0 };
+    }
+    if ((m = name.match(/^Step\s+(\d+(?:\.\d+)?)\s*Index$/i))) {
+      return { type: 'step', oneSec: false, num: parseFloat(m[1]) };
+    }
+    return null;
+  }
+
+  function buildSymbolList(activeSymbols) {
+    const found = { volatility: [], volatilityWide: [], jump: [], step: [] };
+
+    activeSymbols.forEach(entry => {
+      const c = classifySymbol(entry);
+      if (!c) return;
+      const item = { symbol: entry.symbol, display_name: entry.display_name, ...c };
+
+      if (c.type === 'volatility') {
+        if (WHITELIST.volatility.includes(c.num)) found.volatility.push(item);
+        if (WHITELIST.volatilityWide.includes(c.num)) found.volatilityWide.push(item);
+      } else if (c.type === 'jump' && WHITELIST.jump.includes(c.num)) {
+        found.jump.push(item);
+      } else if (c.type === 'step') {
+        found.step.push(item);
+      }
+    });
+
+    const out = [];
+    const seen = new Set();
+    function push(symbol, label) {
+      if (seen.has(symbol)) return;
+      seen.add(symbol);
+      out.push({ symbol, label });
+    }
+
+    // Volatility 10/25/50/75/100 — both standard + 1s variants
+    found.volatility
+      .sort((a, b) => a.num - b.num || (a.oneSec === b.oneSec ? 0 : (a.oneSec ? 1 : -1)))
+      .forEach(i => push(i.symbol, i.display_name));
+
+    // Volatility 150/200/250 — whichever variant(s) exist
+    found.volatilityWide
+      .sort((a, b) => a.num - b.num)
+      .forEach(i => push(i.symbol, i.display_name));
+
+    // Jump 10/25/50/75/100
+    found.jump
+      .sort((a, b) => a.num - b.num)
+      .forEach(i => push(i.symbol, i.display_name));
+
+    // Step indices — take up to 5, label sequentially for display continuity
+    // while keeping the real resolved symbol code.
+    found.step
+      .sort((a, b) => a.num - b.num)
+      .slice(0, WHITELIST.stepMax)
+      .forEach((i, idx) => {
+        const label = i.display_name || `Step ${(0.1 * (idx + 1)).toFixed(1)}`;
+        push(i.symbol, label);
+      });
+
+    return out;
+  }
+
+  return { buildSymbolList };
+})();
+
+/* =============================================================================
+   SECTION: WEBSOCKET
+   Connection lifecycle, reconnection backoff, and the staggered request queue
+   used to avoid Deriv API rate limits.
+   ============================================================================= */
+const Socket = (() => {
+  function connect() {
+    UI.updateWsUi('connecting');
+    State.ws = new WebSocket(WS_URL);
+
+    State.ws.onopen = () => {
+      State.wsConnected = true;
+      State.reconnectAttempts = 0;
+      UI.updateWsUi('online');
+      if (State.SYMBOLS.length === 0) {
+        requestActiveSymbols();
+      } else {
+        // reconnect case: rebuild queue to resubscribe everything
+        State.SYMBOLS.forEach(s => enqueueSymbolRequests(s.symbol));
+        runQueue();
+      }
+    };
+
+    State.ws.onmessage = (evt) => {
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch (e) { return; }
+      MessageHandler.handle(msg);
+    };
+
+    State.ws.onerror = () => UI.updateWsUi('error');
+
+    State.ws.onclose = () => {
+      State.wsConnected = false;
+      UI.updateWsUi('offline');
+      scheduleReconnect();
+    };
+  }
+
+  function scheduleReconnect() {
+    if (State.reconnectTimer) return;
+    State.reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(1.6, State.reconnectAttempts), 20000);
+    UI.updateWsUi('reconnecting', delay);
+    State.reconnectTimer = setTimeout(() => {
+      State.reconnectTimer = null;
+      connect();
+    }, delay);
+  }
+
+  function send(payload) {
+    if (State.ws && State.ws.readyState === WebSocket.OPEN) {
+      State.ws.send(JSON.stringify(payload));
+      return true;
+    }
+    return false;
+  }
+
+  function requestActiveSymbols() {
+    send({ active_symbols: 'brief', product_type: 'basic' });
+  }
+
+  function enqueueSymbolRequests(symbol) {
+    Object.entries(GRAN).forEach(([tfName, granularity]) => {
+      State.requestQueue.push({ symbol, granularity, tfName });
+    });
+  }
+
+  function runQueue() {
+    if (State.queueRunning) return;
+    State.queueRunning = true;
+    const step = () => {
+      if (State.requestQueue.length === 0) { State.queueRunning = false; return; }
+      const job = State.requestQueue.shift();
+      send({
+        ticks_history: job.symbol,
+        style: 'candles',
+        granularity: job.granularity,
+        count: HISTORY_COUNT,
+        end: 'latest',
+        subscribe: 1
+      });
+      setTimeout(step, 220); // stagger to respect rate limits
+    };
+    step();
+  }
+
+  function tfKeyFromGranularity(g) {
+    if (g === GRAN.M15) return 'm15';
+    if (g === GRAN.H1) return 'h1';
+    if (g === GRAN.H4) return 'h4';
+    return 'm15';
+  }
+
+  return { connect, send, requestActiveSymbols, enqueueSymbolRequests, runQueue, tfKeyFromGranularity };
+})();
+
+/* =============================================================================
+   SECTION: MESSAGE HANDLING
+   Routes incoming WS payloads to the correct data-model update.
+   ============================================================================= */
+const MessageHandler = (() => {
+  function handle(msg) {
+    if (msg.error) {
+      // Non-fatal for a single symbol/timeframe — mark it and move on
+      const req = msg.echo_req || {};
+      if (req.ticks_history) {
+        const sd = State.DATA[req.ticks_history];
+        if (sd) { sd.connection = 'error'; State.dirtyRows.add(sd.symbol); }
+      }
+      return;
+    }
+
+    if (msg.msg_type === 'active_symbols') {
+      onActiveSymbols(msg.active_symbols || []);
+      return;
+    }
+
+    if (msg.msg_type === 'candles') {
+      onCandles(msg);
+      return;
+    }
+
+    if (msg.msg_type === 'ohlc') {
+      onOhlc(msg);
+      return;
+    }
+  }
+
+  function onActiveSymbols(activeSymbols) {
+    State.SYMBOLS = SymbolResolver.buildSymbolList(activeSymbols);
+    document.getElementById('statSymbols').textContent = State.SYMBOLS.length;
+    document.getElementById('cardTotal').textContent = State.SYMBOLS.length;
+    State.SYMBOLS.forEach(s => DataModel.init(s.symbol, s.label));
+    UI.buildTableRows();
+    State.SYMBOLS.forEach(s => Socket.enqueueSymbolRequests(s.symbol));
+    Socket.runQueue();
+    History.render(); // labels for any already-loaded history rows may now resolve to real names
+  }
+
+  function onCandles(msg) {
+    const req = msg.echo_req || {};
+    const symbol = req.ticks_history;
+    const granularity = req.granularity;
+    const sd = State.DATA[symbol];
+    if (!sd || !msg.candles) return;
+    const tf = Socket.tfKeyFromGranularity(granularity);
+    sd.candles[tf] = msg.candles.map(c => ({
+      epoch: c.epoch, open: +c.open, high: +c.high, low: +c.low, close: +c.close
+    }));
+    sd.connection = 'ok';
+    Indicators.recomputeTimeframe(symbol, tf);
+  }
+
+  function onOhlc(msg) {
+    const o = msg.ohlc;
+    if (!o) return;
+    const symbol = o.symbol;
+    const granularity = +o.granularity;
+    const sd = State.DATA[symbol];
+    if (!sd) return;
+    const tf = Socket.tfKeyFromGranularity(granularity);
+    const arr = sd.candles[tf];
+    if (!arr || arr.length === 0) return;
+
+    const last = arr[arr.length - 1];
+    const candle = { epoch: +o.open_time, open: +o.open, high: +o.high, low: +o.low, close: +o.close };
+
+    if (last.epoch === candle.epoch) {
+      arr[arr.length - 1] = candle; // still-forming candle update
+    } else if (candle.epoch > last.epoch) {
+      arr.push(candle); // new candle opened -> previous candle is now closed
+      if (arr.length > HISTORY_COUNT + 5) arr.shift();
+    } else {
+      return; // stale/duplicate
+    }
+    sd.connection = 'ok';
+    sd.lastUpdate = Utils.nowMs();
+
+    const justClosed = (last.epoch !== candle.epoch); // a candle closed this tick
+    Indicators.recomputeTimeframe(symbol, tf, justClosed ? last : null);
+  }
+
+  return { handle };
+})();
+
+/* =============================================================================
+   SECTION: DATA MODEL
+   Per-symbol runtime record: candles, indicators, signal side-states, debug text.
+   ============================================================================= */
+const DataModel = (() => {
+  function newSideState() {
+    return {
+      trendSideEstablished: false, // price confirmed on trend side of EMA50 pre-pullback
+      pullbackActive: false,
+      pullbackCandles: 0,
+      armed: false,
+      armedAt: null,
+      lastPullbackSignaled: false
+    };
+  }
+
+  function init(symbol, label) {
+    State.DATA[symbol] = {
+      symbol, label,
+      candles: { m15: [], h1: [], h4: [] },
+      ind: {
+        h1: { ema20: null, ema50: null, ema200: null, trend: '—' },
+        h4: { ema20: null, ema50: null, ema200: null, trend: '—' },
+        m15: { ema50: null, atr: null }
+      },
+      price: null,
+      connection: 'pending',
+      lastUpdate: null,
+      buy: newSideState(),
+      sell: newSideState(),
+      lastSignal: null, // {side, price, time}
+      debugText: { buy: 'Initializing…', sell: 'Initializing…' }
+    };
+  }
+
+  return { init, newSideState };
+})();
+
+/* =============================================================================
+   SECTION: INDICATORS
+   EMA / ATR series calculations + trend classification.
+   ============================================================================= */
+const Indicators = (() => {
+  function computeEMASeries(closes, period) {
+    if (closes.length < period) return new Array(closes.length).fill(null);
+    const k = 2 / (period + 1);
+    const out = new Array(closes.length).fill(null);
+    let seed = 0;
+    for (let i = 0; i < period; i++) seed += closes[i];
+    seed /= period;
+    out[period - 1] = seed;
+    let prev = seed;
+    for (let i = period; i < closes.length; i++) {
+      const val = closes[i] * k + prev * (1 - k);
+      out[i] = val;
+      prev = val;
+    }
+    return out;
+  }
+
+  function computeATRSeries(candles, period) {
+    const n = candles.length;
+    const out = new Array(n).fill(null);
+    if (n < period + 1) return out;
+    const tr = new Array(n).fill(null);
+    for (let i = 1; i < n; i++) {
+      const c = candles[i], p = candles[i - 1];
+      tr[i] = Math.max(c.high - c.low, Math.abs(c.high - p.close), Math.abs(c.low - p.close));
+    }
+    let seed = 0;
+    for (let i = 1; i <= period; i++) seed += tr[i];
+    seed /= period;
+    out[period] = seed;
+    let prev = seed;
+    for (let i = period + 1; i < n; i++) {
+      const val = (prev * (period - 1) + tr[i]) / period;
+      out[i] = val;
+      prev = val;
+    }
+    return out;
+  }
+
+  function trendFromEma(ema20, ema50, ema200, price) {
+    if (ema20 === null || ema50 === null || ema200 === null) return 'mixed';
+    if (ema20 > ema50 && ema50 > ema200 && price > ema200) return 'bullish';
+    if (ema20 < ema50 && ema50 < ema200 && price < ema200) return 'bearish';
+    return 'mixed';
+  }
+
+  function recomputeTimeframe(symbol, tf, justClosedCandle) {
+    const sd = State.DATA[symbol];
+    if (!sd) return;
+    const candles = sd.candles[tf];
+    if (!candles || candles.length === 0) return;
+    const closes = candles.map(c => c.close);
+    const lastClose = closes[closes.length - 1];
+    sd.price = lastClose;
+
+    if (tf === 'h1' || tf === 'h4') {
+      const e20 = computeEMASeries(closes, CFG.ema20);
+      const e50 = computeEMASeries(closes, CFG.ema50);
+      const e200 = computeEMASeries(closes, CFG.ema200);
+      const i = closes.length - 1;
+      const ema20 = e20[i], ema50 = e50[i], ema200 = e200[i];
+      const trend = trendFromEma(ema20, ema50, ema200, lastClose);
+      sd.ind[tf] = { ema20, ema50, ema200, trend };
+    }
+
+    if (tf === 'm15') {
+      const e50 = computeEMASeries(closes, CFG.ema50);
+      const atrArr = computeATRSeries(candles, CFG.atrPeriod);
+      const i = closes.length - 1;
+      sd.ind.m15.ema50 = e50[i];
+      sd.ind.m15.atr = atrArr[i];
+
+      // Only evaluate the state machine on an actual M15 candle CLOSE,
+      // using the candle that just closed (not the still-forming one).
+      if (justClosedCandle) {
+        const idxClosed = candles.length - 2; // index of the closed candle within arr
+        const emaAtClose = e50[idxClosed];
+        const atrAtClose = atrArr[idxClosed];
+        if (emaAtClose !== null && atrAtClose !== null) {
+          SignalEngine.evaluateSide(symbol, 'sell', justClosedCandle, emaAtClose, atrAtClose);
+          SignalEngine.evaluateSide(symbol, 'buy', justClosedCandle, emaAtClose, atrAtClose);
+        }
+      }
+    }
+
+    State.dirtyRows.add(symbol);
+    if (State.currentTab === 'scanner') UI.scheduleRender();
+  }
+
+  return { computeEMASeries, computeATRSeries, trendFromEma, recomputeTimeframe };
+})();
+
+/* =============================================================================
+   SECTION: SIGNAL ENGINE (state machine)
+   direction: 'sell' -> trend side is BELOW ema50, pullback is bullish
+              'buy'  -> trend side is ABOVE ema50, pullback is bearish
+   ============================================================================= */
+const SignalEngine = (() => {
+  function trendValid(symbol, direction, forCancellationCheck) {
+    const sd = State.DATA[symbol];
+    const h1 = sd.ind.h1.trend, h4 = sd.ind.h4.trend;
+    const wantH4 = direction === 'sell' ? 'bearish' : 'bullish';
+    const wantH1 = direction === 'sell' ? 'bearish' : 'bullish';
+
+    if (h4 !== wantH4) return false; // H4 must always match; never allow H4 mixed
+    if (forCancellationCheck) return true; // once armed, only H4 change can cancel
+
+    if (!CFG.allowMixedH1) return h1 === wantH1;
+    return h1 === wantH1 || h1 === 'mixed';
+  }
+
+  function resetSide(state) {
+    state.trendSideEstablished = false;
+    state.pullbackActive = false;
+    state.pullbackCandles = 0;
+    state.armed = false;
+    state.armedAt = null;
+  }
+
+  function evaluateSide(symbol, direction, closedCandle, ema50, atr) {
+    const sd = State.DATA[symbol];
+    const state = sd[direction];
+    const isBull = closedCandle.close > closedCandle.open;
+    const isBear = closedCandle.close < closedCandle.open;
+    const pullbackCandle = direction === 'sell' ? isBull : isBear; // counter-trend candle
+    const reclaimCandle = direction === 'sell' ? isBear : isBull;  // candle that fires the signal
+    const priceOnTrendSide = direction === 'sell'
+      ? closedCandle.close < ema50
+      : closedCandle.close > ema50;
+
+    if (state.armed) {
+      // Important Rule: once armed, only H4 change or pullback invalidation cancels it.
+      if (!trendValid(symbol, direction, true)) {
+        resetSide(state);
+        sd.debugText[direction] = `Setup cancelled — H4 trend changed.`;
+        return;
+      }
+      const emaCrossBack = direction === 'sell'
+        ? (closedCandle.close < ema50)
+        : (closedCandle.close > ema50);
+
+      if (reclaimCandle && emaCrossBack) {
+        fireSignal(symbol, direction, closedCandle, ema50, atr);
+        resetSide(state); // cooldown: must build an entirely new pullback before re-arming
+        return;
+      }
+      sd.debugText[direction] = `SETUP ARMED — waiting for first ${direction === 'sell' ? 'bearish' : 'bullish'} M15 candle to close ${direction === 'sell' ? 'below' : 'above'} EMA50.`;
+      return;
+    }
+
+    // Not armed yet: require full trend validity to progress
+    if (!trendValid(symbol, direction, false)) {
+      sd.debugText[direction] = `Trend requirements not met (H4: ${sd.ind.h4.trend}, H1: ${sd.ind.h1.trend}).`;
+      return;
+    }
+
+    if (priceOnTrendSide && !state.pullbackActive) {
+      state.trendSideEstablished = true;
+      state.pullbackCandles = 0;
+    }
+
+    if (state.trendSideEstablished && pullbackCandle) {
+      state.pullbackActive = true;
+      state.pullbackCandles++;
+
+      const distance = Math.abs(closedCandle.close - ema50);
+      const enoughCandles = state.pullbackCandles >= CFG.minPullback;
+      const crossedBack = direction === 'sell' ? (closedCandle.close > ema50) : (closedCandle.close < ema50);
+      const enoughDistance = atr > 0 && distance >= CFG.atrMult * atr;
+
+      if (enoughCandles && crossedBack && enoughDistance) {
+        state.armed = true;
+        state.armedAt = Utils.nowMs();
+        sd.debugText[direction] = `SETUP ARMED — ${state.pullbackCandles} pullback candles, ${(distance / atr).toFixed(2)} ATR from EMA50.`;
+      } else {
+        const reasons = [];
+        if (!enoughCandles) reasons.push(`only ${state.pullbackCandles} pullback candle(s), need ${CFG.minPullback}`);
+        if (!crossedBack) reasons.push(`price hasn't closed back through EMA50 yet`);
+        if (crossedBack && !enoughDistance) reasons.push(`only ${(distance / (atr || 1)).toFixed(2)} ATR from EMA50, need ${CFG.atrMult}`);
+        sd.debugText[direction] = `Pullback forming — ${reasons.join('; ') || 'monitoring'}.`;
+      }
+    } else if (state.pullbackActive && !pullbackCandle) {
+      // pullback streak broken before arming -> invalid, reset pullback tracking
+      state.pullbackActive = false;
+      state.pullbackCandles = 0;
+      sd.debugText[direction] = `Pullback invalidated before arming — streak broken.`;
+    } else {
+      sd.debugText[direction] = state.trendSideEstablished
+        ? `Waiting for a valid ${direction === 'sell' ? 'bullish' : 'bearish'} pullback to begin.`
+        : `Waiting for price to establish itself ${direction === 'sell' ? 'below' : 'above'} EMA50 first.`;
+    }
+  }
+
+  function fireSignal(symbol, direction, closedCandle, ema50, atr) {
+    const sd = State.DATA[symbol];
+    const sig = {
+      symbol, label: sd.label, direction,
+      price: closedCandle.close,
+      time: Utils.nowMs(),
+      h1: sd.ind.h1.trend, h4: sd.ind.h4.trend,
+      atr: atr,
+      emaDistance: closedCandle.close - ema50
+    };
+    sd.lastSignal = sig;
+    History.maybeResetDailyCounter();
+    State.signalsToday++;
+    document.getElementById('cardSignalsToday').textContent = State.signalsToday;
+
+    Alerts.playBeep(direction);
+    Alerts.notify(`${direction.toUpperCase()} signal — ${sd.label}`, `Entry @ ${Utils.fmtPrice(sig.price)} · H1 ${sig.h1} · H4 ${sig.h4}`);
+    UI.flashRow(symbol, direction);
+    History.prepend(sig); // optimistic local display; Supabase write happens below independently
+
+    // Persist the confirmed signal to Supabase (queued + retried independently
+    // of the scanning/signal logic above — a Supabase outage never blocks or
+    // alters scanning).
+    SupabaseSync.recordSignal(sig);
+
+    // Queue exactly one Telegram notification for this signal (also queued +
+    // retried independently; the bot token never touches this page — see
+    // supabase/functions/notify-telegram).
+    TelegramNotify.recordSignal(sig);
+  }
+
+  return { evaluateSide, trendValid, resetSide };
+})();
+
+/* =============================================================================
+   SECTION: UI — connection status, tabs, table rendering
+   Performance note: renderTable() no longer blindly replaces the entire tbody
+   on every tick. It reconciles by symbol — rows are only touched when their
+   generated HTML actually changed, and DOM nodes are moved (not recreated)
+   when only ordering changes. A rAF-batched scheduler collapses bursts of
+   rapid data updates (multiple symbols/timeframes arriving back-to-back)
+   into a single paint.
+   ============================================================================= */
+const UI = (() => {
+  // symbol -> last-rendered row HTML, used to skip redundant DOM writes
+  const rowHtmlCache = new Map();
+  let lastOrder = [];
+  let renderQueued = false;
+
+  function updateWsUi(state, delay) {
+    const led = document.getElementById('wsLed');
+    const label = document.getElementById('wsStatus');
+    const dot = document.getElementById('connDot');
+    led.classList.remove('on', 'off', 'mid');
+    switch (state) {
+      case 'online': led.classList.add('on'); label.textContent = 'Connected'; dot.style.background = 'var(--accent)'; break;
+      case 'connecting': led.classList.add('mid'); label.textContent = 'Connecting…'; break;
+      case 'reconnecting': led.classList.add('mid'); label.textContent = `Reconnecting in ${Math.round(delay / 1000)}s…`; break;
+      case 'error': led.classList.add('off'); label.textContent = 'Error'; break;
+      case 'offline': led.classList.add('off'); label.textContent = 'Disconnected'; break;
+    }
+  }
+
+  function setTab(tab) {
+    State.currentTab = tab;
+    document.getElementById('tabScanner').classList.toggle('active', tab === 'scanner');
+    document.getElementById('tabHistory').classList.toggle('active', tab === 'history');
+    document.getElementById('scannerPanel').style.display = tab === 'scanner' ? '' : 'none';
+    document.getElementById('historyPanel').style.display = tab === 'history' ? '' : 'none';
+    if (tab === 'scanner') renderTable(); else History.render();
+    Storage.save();
+  }
+
+  function sortBy(key) {
+    if (State.sortState.key === key) State.sortState.dir *= -1;
+    else { State.sortState.key = key; State.sortState.dir = 1; }
+    renderTable();
+    Storage.save();
+  }
+
+  function onSearchInput() {
+    renderTable();
+    Storage.save();
+  }
+
+  function trendBadge(trend) {
+    const cls = trend === 'bullish' ? 'bull' : trend === 'bearish' ? 'bear' : 'mixed';
+    const label = trend === 'bullish' ? 'Bullish' : trend === 'bearish' ? 'Bearish' : 'Mixed';
+    return `<span class="badge ${cls}">${label}</span>`;
+  }
+
+  function getFilteredSortedRows() {
+    const filterText = document.getElementById('symSearch').value.trim().toLowerCase();
+    let rows = State.SYMBOLS.map(s => State.DATA[s.symbol]).filter(Boolean);
+
+    // Respect user-disabled symbols (persisted in Settings)
+    rows = rows.filter(r => !State.disabledSymbols.has(r.symbol));
+
+    if (filterText) {
+      rows = rows.filter(r => r.label.toLowerCase().includes(filterText) || r.symbol.toLowerCase().includes(filterText));
+    }
+
+    rows.sort((a, b) => {
+      const k = State.sortState.key;
+      let av, bv;
+      if (k === 'label') { av = a.label; bv = b.label; return State.sortState.dir * av.localeCompare(bv); }
+      if (k === 'h1') { av = a.ind.h1.trend; bv = b.ind.h1.trend; return State.sortState.dir * av.localeCompare(bv); }
+      if (k === 'h4') { av = a.ind.h4.trend; bv = b.ind.h4.trend; return State.sortState.dir * av.localeCompare(bv); }
+      if (k === 'atr') { av = a.ind.m15.atr || 0; bv = b.ind.m15.atr || 0; }
+      else { av = a.price || 0; bv = b.price || 0; } // default / 'price'
+      return State.sortState.dir * (av - bv);
+    });
+
+    return rows;
+  }
+
+  function rowHtml(sd) {
+    const digits = Utils.digitsForPrice(sd.price);
+    const connCls = sd.connection === 'ok' ? 'conn-ok' : sd.connection === 'error' ? 'conn-bad' : 'conn-mid';
+    const connLabel = sd.connection === 'ok' ? 'Live' : sd.connection === 'error' ? 'Error' : 'Sync…';
+
+    const buyArmedBadge = sd.buy.armed ? `<span class="badge armed-buy dot-on">ARMED</span>` : `<span class="badge wait">—</span>`;
+    const sellArmedBadge = sd.sell.armed ? `<span class="badge armed-sell dot-on">ARMED</span>` : `<span class="badge wait">—</span>`;
+
+    const m15Status = sd.buy.armed ? 'Buy Armed' : sd.sell.armed ? 'Sell Armed' :
+      (sd.buy.pullbackActive ? 'Buy Pullback' : sd.sell.pullbackActive ? 'Sell Pullback' : 'Waiting');
+
+    const lastSig = sd.lastSignal;
+    const lastSigHtml = lastSig
+      ? `<span class="${lastSig.direction === 'buy' ? 'sig-buy' : 'sig-sell'}">${lastSig.direction.toUpperCase()}</span>`
+      : `<span class="sig-none">—</span>`;
+
+    const ema50 = sd.ind.m15.ema50;
+    const dist = (sd.price !== null && ema50 !== null) ? (sd.price - ema50) : null;
+    const distStr = dist === null ? '—' : `${dist >= 0 ? '+' : ''}${Utils.fmtPrice(dist, digits)}`;
+
+    return `<td><span class="sym-name">${Utils.escapeHtml(sd.label)}</span><span class="sym-code">${Utils.escapeHtml(sd.symbol)}</span></td>
+    <td>${Utils.fmtPrice(sd.price, digits)}</td>
+    <td>${trendBadge(sd.ind.h1.trend)}</td>
+    <td>${trendBadge(sd.ind.h4.trend)}</td>
+    <td>${m15Status}</td>
+    <td>${buyArmedBadge}</td>
+    <td>${sellArmedBadge}</td>
+    <td>${sd.buy.armed ? '<span class="sig-buy">Watching</span>' : '<span class="sig-none">—</span>'}</td>
+    <td>${sd.sell.armed ? '<span class="sig-sell">Watching</span>' : '<span class="sig-none">—</span>'}</td>
+    <td>${lastSigHtml}</td>
+    <td>${lastSig ? Utils.fmtTime(lastSig.time) : '—'}</td>
+    <td>${lastSig ? Utils.fmtPrice(lastSig.price, digits) : '—'}</td>
+    <td>${Utils.fmtPrice(sd.ind.m15.atr, digits)}</td>
+    <td>${distStr}</td>
+    <td class="${connCls}">${connLabel}</td>`;
+  }
+
+  // Full structural rebuild — used when the symbol list first resolves,
+  // or whenever nothing has been rendered yet.
+  function buildTableRows() {
+    rowHtmlCache.clear();
+    lastOrder = [];
+    renderTable();
+  }
+
+  // Batches rapid successive update calls into a single animation-frame paint.
+  function scheduleRender() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => {
+      renderQueued = false;
+      if (State.currentTab === 'scanner') renderTable();
+    });
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('scanBody');
+    const rows = getFilteredSortedRows();
+
+    if (rows.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="15" class="empty">No symbols match, or symbols are still resolving…</td></tr>`;
+      rowHtmlCache.clear();
+      lastOrder = [];
+    } else {
+      const newOrder = rows.map(r => r.symbol);
+      const orderChanged = newOrder.length !== lastOrder.length || newOrder.some((s, i) => s !== lastOrder[i]);
+
+      if (orderChanged || tbody.children.length !== rows.length || tbody.children[0]?.classList.contains('empty')) {
+        // Structural change (sort/filter/new symbols): rebuild via fragment,
+        // reusing existing <tr> nodes by id where possible to avoid discarding
+        // hover/animation state unnecessarily.
+        const existing = new Map();
+        tbody.querySelectorAll('tr[id]').forEach(tr => existing.set(tr.id, tr));
+        const frag = document.createDocumentFragment();
+        rows.forEach(sd => {
+          const id = `row-${sd.symbol}`;
+          const html = rowHtml(sd);
+          let tr = existing.get(id);
+          if (!tr) {
+            tr = document.createElement('tr');
+            tr.id = id;
+            tr.onclick = () => Debug.openModal(sd.symbol);
+          }
+          if (rowHtmlCache.get(sd.symbol) !== html) {
+            tr.innerHTML = html;
+            rowHtmlCache.set(sd.symbol, html);
+          }
+          frag.appendChild(tr);
+        });
+        tbody.innerHTML = '';
+        tbody.appendChild(frag);
+        lastOrder = newOrder;
+      } else {
+        // Same order as last paint: patch only rows whose content actually changed.
+        rows.forEach(sd => {
+          const html = rowHtml(sd);
+          if (rowHtmlCache.get(sd.symbol) !== html) {
+            const tr = document.getElementById(`row-${sd.symbol}`);
+            if (tr) tr.innerHTML = html;
+            rowHtmlCache.set(sd.symbol, html);
+          }
+        });
+      }
+    }
+
+    let buyArmed = 0, sellArmed = 0;
+    rows.forEach(r => { if (r.buy.armed) buyArmed++; if (r.sell.armed) sellArmed++; });
+    document.getElementById('cardBuyArmed').textContent = buyArmed;
+    document.getElementById('cardSellArmed').textContent = sellArmed;
+    document.getElementById('statLastScan').textContent = Utils.fmtTime(Utils.nowMs());
+    State.dirtyRows.clear();
+  }
+
+  function flashRow(symbol, direction) {
+    const row = document.getElementById(`row-${symbol}`);
+    if (!row) return;
+    row.classList.add(direction === 'buy' ? 'flash-buy' : 'flash-sell');
+    setTimeout(() => row.classList.remove('flash-buy', 'flash-sell'), 3000);
+  }
+
+  return {
+    updateWsUi, setTab, sortBy, onSearchInput, trendBadge,
+    buildTableRows, scheduleRender, renderTable, flashRow
+  };
+})();
+
+/* =============================================================================
+   SECTION: HISTORY
+   Supabase-backed signal log.
+   - Loads previous signals from Supabase on startup (newest first).
+   - Caches the loaded list in localStorage so history is still available
+     (read-only, possibly stale) if the page opens offline or Supabase is
+     unreachable.
+   - Newly-fired signals are shown immediately (optimistic, from the local
+     signal engine) and reconciled with Supabase on the next refresh.
+   - Supports free-text search (symbol/label) and direction filtering,
+     entirely client-side over the loaded set.
+   - "Signals Today" (the top stat card) is a separate lightweight in-memory
+     counter that still resets daily at 7 PM local — it does NOT control
+     what's shown in the History tab anymore, since that list is persistent.
+   ============================================================================= */
+const History = (() => {
+  const CACHE_KEY = 'derivScanner.historyCache.v1';
+  const FETCH_LIMIT = 500;
+
+  let searchText = '';
+  let dirFilter = 'all';
+  let loading = false;
+
+  function labelFor(symbol) {
+    const sd = State.DATA[symbol];
+    if (sd) return sd.label;
+    const meta = State.SYMBOLS.find(s => s.symbol === symbol);
+    return meta ? meta.label : symbol;
+  }
+
+  function keyOf(sig) {
+    return `${sig.symbol}|${sig.direction}|${sig.time}`;
+  }
+
+  function rowToSig(row) {
+    return {
+      symbol: row.symbol,
+      direction: row.direction,
+      price: row.entry_price !== null && row.entry_price !== undefined ? Number(row.entry_price) : null,
+      time: row.signal_time ? new Date(row.signal_time).getTime() : null,
+      h1: row.h1_trend,
+      h4: row.h4_trend,
+      atr: row.atr !== null && row.atr !== undefined ? Number(row.atr) : null,
+      emaDistance: row.ema_distance !== null && row.ema_distance !== undefined ? Number(row.ema_distance) : null
+    };
+  }
+
+  function loadCache() {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveCache(list) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify(list.slice(0, FETCH_LIMIT)));
+    } catch (e) {
+      // localStorage unavailable/full — offline cache simply won't persist
+    }
+  }
+
+  function setSourceStatus(text, cls) {
+    const el = document.getElementById('historySourceStatus');
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = cls || 'var(--dimmer)';
+  }
+
+  // Merge server rows with whatever's currently held locally (in-memory
+  // signals fired this session that may not have synced/shown up yet),
+  // de-duplicate, sort newest-first, and cache the result.
+  function mergeAndStore(serverSigs) {
+    const map = new Map();
+    serverSigs.forEach(s => map.set(keyOf(s), s));
+    State.historyList.forEach(s => {
+      const k = keyOf(s);
+      if (!map.has(k)) map.set(k, s);
+    });
+    const merged = Array.from(map.values()).sort((a, b) => (b.time || 0) - (a.time || 0));
+    State.historyList = merged.slice(0, FETCH_LIMIT);
+    saveCache(State.historyList);
+  }
+
+  // Called once at boot: paint whatever's cached immediately (works offline),
+  // then try to load the real, current list from Supabase.
+  async function init() {
+    const cached = loadCache();
+    if (cached.length > 0) {
+      State.historyList = cached;
+      setSourceStatus('Loading from cache…');
+      render();
+    } else {
+      setSourceStatus('Loading…');
+    }
+    await refresh();
+  }
+
+  // Re-fetch from Supabase (startup + manual "Refresh" button).
+  async function refresh() {
+    if (loading) return;
+    loading = true;
+    setSourceStatus('Refreshing…');
+    const { data, error } = await SupabaseSync.fetchSignals(FETCH_LIMIT);
+    loading = false;
+
+    if (error || !data) {
+      const offline = !navigator.onLine;
+      if (!SupabaseSync.isConfigured()) {
+        setSourceStatus('Cloud not configured — showing local/cached signals only', 'var(--amber)');
+      } else if (offline) {
+        setSourceStatus('Offline — showing cached history', 'var(--amber)');
+      } else {
+        setSourceStatus('Could not reach Supabase — showing cached history', 'var(--red)');
+      }
+      render(); // still render whatever we already have (cache/local)
+      return;
+    }
+
+    mergeAndStore(data.map(rowToSig));
+    setSourceStatus(`Synced (${State.historyList.length} loaded)`, 'var(--green)');
+    render();
+  }
+
+  function getFiltered() {
+    let rows = State.historyList.slice(); // already newest-first from mergeAndStore
+    if (dirFilter === 'buy' || dirFilter === 'sell') {
+      rows = rows.filter(s => s.direction === dirFilter);
+    }
+    if (searchText) {
+      const q = searchText.toLowerCase();
+      rows = rows.filter(s => labelFor(s.symbol).toLowerCase().includes(q) || s.symbol.toLowerCase().includes(q));
+    }
+    return rows;
+  }
+
+  function renderStats(rows) {
+    const buy = rows.filter(s => s.direction === 'buy').length;
+    const sell = rows.filter(s => s.direction === 'sell').length;
+    const todayStr = new Date().toDateString();
+    const today = rows.filter(s => s.time && new Date(s.time).toDateString() === todayStr).length;
+    document.getElementById('histStatShown').textContent = rows.length;
+    document.getElementById('histStatBuy').textContent = buy;
+    document.getElementById('histStatSell').textContent = sell;
+    document.getElementById('histStatToday').textContent = today;
+  }
+
+  function render() {
+    const tbody = document.getElementById('historyBody');
+    const rows = getFiltered();
+    renderStats(rows);
+
+    if (rows.length === 0) {
+      const msg = State.historyList.length === 0 ? 'No signals yet.' : 'No signals match your search/filter.';
+      tbody.innerHTML = `<tr><td colspan="6" class="empty">${msg}</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows.map(sig => {
+      const digits = Utils.digitsForPrice(sig.price);
+      return `<tr>
+      <td class="sym-name" style="font-family:var(--sans);">${Utils.escapeHtml(labelFor(sig.symbol))}</td>
+      <td class="${sig.direction === 'buy' ? 'sig-buy' : 'sig-sell'}">${sig.direction.toUpperCase()}</td>
+      <td>${Utils.fmtPrice(sig.price, digits)}</td>
+      <td>${Utils.fmtTime(sig.time)}</td>
+      <td>${UI.trendBadge(sig.h1)}</td>
+      <td>${UI.trendBadge(sig.h4)}</td>
+    </tr>`;
+    }).join('');
+  }
+
+  // Optimistic local insert the instant a signal fires — shown immediately
+  // without waiting on a Supabase round-trip; reconciled on next refresh().
+  function prepend(sig) {
+    if (State.historyList.some(s => keyOf(s) === keyOf(sig))) return;
+    State.historyList.unshift(sig);
+    if (State.historyList.length > FETCH_LIMIT) State.historyList.length = FETCH_LIMIT;
+    saveCache(State.historyList);
+    render();
+  }
+
+  // Clears the local view/cache only. Does NOT delete rows from Supabase
+  // (the anon key intentionally has no delete permission — see signals.sql).
+  function clear() {
+    State.historyList = [];
+    saveCache(State.historyList);
+    render();
+  }
+
+  function onSearchInput() {
+    const el = document.getElementById('historySearch');
+    searchText = el ? el.value.trim() : '';
+    render();
+    Storage.save();
+  }
+
+  function onFilterChange() {
+    const el = document.getElementById('historyDirFilter');
+    dirFilter = el ? el.value : 'all';
+    render();
+    Storage.save();
+  }
+
+  function restoreUiPrefs(ui) {
+    searchText = ui.historySearch || '';
+    dirFilter = ui.historyDirFilter || 'all';
+    const searchEl = document.getElementById('historySearch');
+    if (searchEl) searchEl.value = searchText;
+    const filterEl = document.getElementById('historyDirFilter');
+    if (filterEl) filterEl.value = dirFilter;
+  }
+
+  function uiPrefsForSave() {
+    return { historySearch: searchText, historyDirFilter: dirFilter };
+  }
+
+  // Separate from the history log itself: just the daily "Signals Today"
+  // counter shown on the main stats row, reset once per day at/after 7 PM.
+  function maybeResetDailyCounter() {
+    const now = new Date();
+    const today = now.toDateString();
+    if (now.getHours() >= 19 && State.lastHistoryResetDate !== today) {
+      State.signalsToday = 0;
+      State.lastHistoryResetDate = today;
+      document.getElementById('cardSignalsToday').textContent = 0;
+    }
+  }
+
+  return {
+    init, refresh, render, prepend, clear,
+    onSearchInput, onFilterChange, restoreUiPrefs, uiPrefsForSave,
+    maybeResetDailyCounter
+  };
+})();
+
+/* =============================================================================
+   SECTION: DEBUG MODAL
+   Per-symbol diagnostic view of trend checks and pullback state machine.
+   ============================================================================= */
+const Debug = (() => {
+  function toggleMode() {
+    State.debugMode = !State.debugMode;
+    const btn = document.getElementById('debugToggleBtn');
+    btn.textContent = `🐞 Debug: ${State.debugMode ? 'ON' : 'OFF'}`;
+    btn.classList.toggle('active', State.debugMode);
+    Storage.save();
+  }
+
+  function line(k, v, ok) {
+    const mark = ok === undefined ? '' : (ok ? `<span class="ok-tick">✅</span>` : `<span class="bad-x">❌</span>`);
+    return `<div class="debug-line"><span class="k">${k}</span><span>${v} ${mark}</span></div>`;
+  }
+
+  function openModal(symbol) {
+    if (!State.debugMode) return;
+    const sd = State.DATA[symbol];
+    if (!sd) return;
+    document.getElementById('modalTitle').textContent = sd.label;
+
+    const h1ok = sd.ind.h1.trend !== 'mixed' || CFG.allowMixedH1;
+    const h4ok = sd.ind.h4.trend === 'bullish' || sd.ind.h4.trend === 'bearish';
+    const atrOk = sd.ind.m15.atr !== null && sd.ind.m15.atr > 0;
+
+    let html = '';
+    html += line('H4 Trend', sd.ind.h4.trend, h4ok);
+    html += line('H1 Trend', sd.ind.h1.trend, h1ok);
+    html += line('EMA50 (M15)', Utils.fmtPrice(sd.ind.m15.ema50, 5));
+    html += line('ATR (M15)', Utils.fmtPrice(sd.ind.m15.atr, 5), atrOk);
+    html += line('Current Price', Utils.fmtPrice(sd.price, 5));
+
+    ['buy', 'sell'].forEach(dir => {
+      const st = sd[dir];
+      html += `<div style="margin-top:14px;font-weight:700;font-size:12px;color:var(--dim);text-transform:uppercase;">${dir} setup</div>`;
+      html += line('Pullback Candles', st.pullbackCandles);
+      html += line('Armed', st.armed ? 'Yes' : 'No', st.armed);
+      const cls = st.armed ? 'armed' : 'blocked';
+      html += `<div class="status-line ${cls}">
+      <b>${st.armed ? `${dir.toUpperCase()} ARMED` : 'Signal Blocked'}</b><br>
+      Reason: ${sd.debugText[dir] || 'Monitoring…'}
+    </div>`;
+    });
+
+    document.getElementById('modalBody').innerHTML = html;
+    document.getElementById('modalOverlay').classList.add('show');
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('show');
+  }
+
+  return { toggleMode, openModal, closeModal };
+})();
+
+/* =============================================================================
+   SECTION: SETTINGS DRAWER
+   Reads/writes CFG and triggers an immediate recompute across all symbols.
+   ============================================================================= */
+const Settings = (() => {
+  function renderSymbolList() {
+    const container = document.getElementById('cfgSymbolList');
+    if (State.SYMBOLS.length === 0) {
+      container.innerHTML = `<div class="hint" style="padding:8px 0;">Symbols still resolving…</div>`;
+      return;
+    }
+    container.innerHTML = State.SYMBOLS.map(s => {
+      const checked = State.disabledSymbols.has(s.symbol) ? '' : 'checked';
+      const id = `symtoggle-${s.symbol}`;
+      return `<div class="toggle-row" style="padding:6px 0;">
+        <div class="t-label" style="font-weight:500;">${Utils.escapeHtml(s.label)}</div>
+        <label class="switch" style="width:34px;height:19px;">
+          <input type="checkbox" id="${id}" ${checked} onchange="toggleSymbolEnabled('${s.symbol}', this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>`;
+    }).join('');
+  }
+
+  function toggleSymbolEnabled(symbol, enabled) {
+    if (enabled) State.disabledSymbols.delete(symbol);
+    else State.disabledSymbols.add(symbol);
+    UI.renderTable();
+    Storage.save();
+  }
+
+  function open() {
+    document.getElementById('cfgEma20').value = CFG.ema20;
+    document.getElementById('cfgEma50').value = CFG.ema50;
+    document.getElementById('cfgEma200').value = CFG.ema200;
+    document.getElementById('cfgAtrPeriod').value = CFG.atrPeriod;
+    document.getElementById('cfgAtrMult').value = CFG.atrMult;
+    document.getElementById('cfgMinPullback').value = CFG.minPullback;
+    document.getElementById('cfgScanSpeed').value = String(CFG.scanSpeed);
+    document.getElementById('cfgAllowMixedH1').checked = CFG.allowMixedH1;
+    document.getElementById('cfgSoundOn').checked = CFG.soundOn;
+    document.getElementById('cfgNotifyOn').checked = CFG.notifyOn;
+    renderSymbolList();
+    document.getElementById('drawer').classList.add('show');
+    document.getElementById('drawerOverlay').classList.add('show');
+  }
+
+  function close() {
+    document.getElementById('drawer').classList.remove('show');
+    document.getElementById('drawerOverlay').classList.remove('show');
+  }
+
+  function apply() {
+    CFG.ema20 = parseInt(document.getElementById('cfgEma20').value) || CFG.ema20;
+    CFG.ema50 = parseInt(document.getElementById('cfgEma50').value) || CFG.ema50;
+    CFG.ema200 = parseInt(document.getElementById('cfgEma200').value) || CFG.ema200;
+    CFG.atrPeriod = parseInt(document.getElementById('cfgAtrPeriod').value) || CFG.atrPeriod;
+    CFG.atrMult = parseFloat(document.getElementById('cfgAtrMult').value) || CFG.atrMult;
+    CFG.minPullback = parseInt(document.getElementById('cfgMinPullback').value) || CFG.minPullback;
+    CFG.scanSpeed = parseInt(document.getElementById('cfgScanSpeed').value) || CFG.scanSpeed;
+    CFG.allowMixedH1 = document.getElementById('cfgAllowMixedH1').checked;
+    CFG.soundOn = document.getElementById('cfgSoundOn').checked;
+
+    const wantNotify = document.getElementById('cfgNotifyOn').checked;
+    if (wantNotify && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().then(p => {
+        CFG.notifyOn = (p === 'granted');
+        Storage.save();
+      });
+    } else {
+      CFG.notifyOn = wantNotify;
+    }
+
+    // Recompute all indicators immediately with new EMA/ATR settings
+    State.SYMBOLS.forEach(s => {
+      Indicators.recomputeTimeframe(s.symbol, 'h1');
+      Indicators.recomputeTimeframe(s.symbol, 'h4');
+      Indicators.recomputeTimeframe(s.symbol, 'm15', null);
+    });
+
+    close();
+    Boot.restartRenderInterval();
+    UI.renderTable();
+    Storage.save();
+  }
+
+  return { open, close, apply, toggleSymbolEnabled };
+})();
+
+/* =============================================================================
+   SECTION: BOOT
+   Wires up global onclick handlers (kept as plain functions for the inline
+   HTML attributes already in the markup) and starts the app.
+   ============================================================================= */
+const Boot = (() => {
+  let renderIntervalId = null;
+
+  function restartRenderInterval() {
+    if (renderIntervalId) clearInterval(renderIntervalId);
+    renderIntervalId = setInterval(() => {
+      if (State.currentTab === 'scanner') UI.renderTable();
+    }, CFG.scanSpeed);
+  }
+
+  function start() {
+    // Restore tab/debug/sort/search UI prefs before the first paint/connect,
+    // then boot the socket with the already-restored CFG (loaded earlier by
+    // Storage.loadConfigOnly()) and restored scanSpeed for the render loop.
+    Storage.restoreUiPrefs();
+    Socket.connect();
+    restartRenderInterval();
+    // Retry any signals that were queued but not yet confirmed synced from
+    // a previous session (e.g. tab was closed while Supabase was down).
+    SupabaseSync.flushQueue();
+    SupabaseSync.updateStatusUi();
+    // Same for any Telegram notifications that hadn't gone out yet.
+    TelegramNotify.flushQueue();
+    TelegramNotify.updateStatusUi();
+    // Load signal history: paints instantly from local cache (works offline),
+    // then reconciles with Supabase.
+    History.init();
+  }
+
+  return { start, restartRenderInterval };
+})();
+
+// Bridge functions referenced directly by inline HTML attributes (onclick=…)
+// in the markup — kept thin, delegating straight into the relevant module.
+function setTab(tab) { UI.setTab(tab); }
+function sortBy(key) { UI.sortBy(key); }
+function onSearchInput() { UI.onSearchInput(); }
+function clearHistory() { History.clear(); }
+function onHistorySearchInput() { History.onSearchInput(); }
+function onHistoryFilterChange() { History.onFilterChange(); }
+function refreshHistory() { History.refresh(); }
+function toggleDebugMode() { Debug.toggleMode(); }
+function openDebugModal(symbol) { Debug.openModal(symbol); }
+function closeModal() { Debug.closeModal(); }
+function openSettings() { Settings.open(); }
+function closeSettings() { Settings.close(); }
+function applySettings() { Settings.apply(); }
+function toggleSymbolEnabled(symbol, enabled) { Settings.toggleSymbolEnabled(symbol, enabled); }
+
+Boot.start();
+</script>
+</body>
+</html>
