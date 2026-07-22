@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Deriv Synthetic Indices Scanner</title>
+<style>
+/* ==========================================================================
+   0. RESET & TOKENS
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+ul, ol { list-style: none; margin: 0; padding: 0; }
+button, input, select { font-family: inherit; font-size: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: inherit; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-1); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 6px; border: 2px solid var(--bg-1); }
+
+:root{
+  /* Color */
+  --bg-0: #0a0d13;
+  --bg-1: #10141d;
+  --bg-2: #161b26;
+  --bg-3: #1e2430;
+  --bg-3-hover: #262d3d;
+  --border: #232936;
+  --border-light: #333a4a;
+  --text-0: #e6e9ef;
+  --text-1: #a7adba;
+  --text-2: #666e7d;
+  --accent: #00d4ff;
+  --accent-dim: #0891b2;
+  --accent-soft: rgba(0, 212, 255, 0.12);
+  --violet: #8b7cff;
+  --violet-soft: rgba(139, 124, 255, 0.14);
+  --bull: #26a69a;
+  --bull-soft: rgba(38, 166, 154, 0.14);
+  --bear: #ef5350;
+  --bear-soft: rgba(239, 83, 80, 0.14);
+  --warn: #f0b429;
+  --warn-soft: rgba(240, 180, 41, 0.14);
+
+  /* Type */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace;
+
+  /* Layout */
+  --header-h: 52px;
+  --statusbar-h: 28px;
+  --sidebar-w: 208px;
+  --sidebar-w-collapsed: 56px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --transition: 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+/* ==========================================================================
+   1. LOADING SCREEN
+   ========================================================================== */
+.loading-screen {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-0);
+  transition: opacity 400ms ease, visibility 400ms ease;
+}
+.loading-screen.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.loading-content { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 280px; }
+.loading-logo { position: relative; width: 64px; height: 64px; }
+.loading-logo svg { width: 100%; height: 100%; }
+.loading-logo .sweep {
+  transform-origin: 32px 32px;
+  animation: sweep-rotate 1.6s linear infinite;
+}
+@keyframes sweep-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.loading-title {
+  font-size: 18px; letter-spacing: 2px; font-weight: 600; color: var(--text-0);
+}
+.loading-title span { color: var(--accent); font-weight: 700; }
+.loading-status {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-2);
+  height: 14px; text-align: center;
+}
+.loading-bar { width: 100%; height: 3px; background: var(--bg-2); border-radius: 2px; overflow: hidden; }
+.loading-bar-fill {
+  height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  transition: width 220ms ease;
+}
+
+/* ==========================================================================
+   2. APP SHELL
+   ========================================================================== */
+.app { height: 100%; display: flex; flex-direction: column; }
+.app[hidden] { display: none; }
+
+.header {
+  height: var(--header-h); flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; background: var(--bg-1); border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.header-left, .header-right { display: flex; align-items: center; gap: 12px; }
+.header-center { flex: 1; display: flex; justify-content: center; min-width: 0; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; background: transparent; border: 1px solid transparent;
+  border-radius: var(--radius-sm); color: var(--text-1); transition: background var(--transition), color var(--transition);
+}
+.icon-btn:hover { background: var(--bg-3); color: var(--text-0); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; letter-spacing: 0.3px; white-space: nowrap; }
+.brand-mark {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 8px var(--accent);
+}
+.brand-accent { color: var(--accent); }
+
+.market-status {
+  display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.market-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bull); flex: 0 0 auto; }
+
+.connection-indicator {
+  display: flex; align-items: center; gap: 7px; padding: 5px 10px;
+  border-radius: 999px; background: var(--bg-2); border: 1px solid var(--border);
+  font-size: 11.5px; white-space: nowrap;
+}
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-2); position: relative; }
+.connection-indicator[data-status="connecting"] .conn-dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+.connection-indicator[data-status="connected"] .conn-dot { background: var(--bull); box-shadow: 0 0 6px var(--bull); }
+.connection-indicator[data-status="error"] .conn-dot,
+.connection-indicator[data-status="disconnected"] .conn-dot { background: var(--bear); }
+.connection-indicator[data-status="idle"] .conn-dot { background: var(--text-2); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+.conn-label { color: var(--text-1); }
+
+.header-clock { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); white-space: nowrap; }
+
+/* ==========================================================================
+   3. BODY LAYOUT: SIDEBAR + MAIN + SETTINGS DRAWER
+   ========================================================================== */
+.body-layout { flex: 1; display: flex; min-height: 0; position: relative; }
+
+.sidebar {
+  flex: 0 0 auto; width: var(--sidebar-w);
+  background: var(--bg-1); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; padding: 10px 8px;
+  transition: width var(--transition);
+  overflow-x: hidden; white-space: nowrap;
+}
+.sidebar.is-collapsed { width: var(--sidebar-w-collapsed); }
+.nav-section-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-2);
+  padding: 10px 10px 6px;
+}
+.sidebar.is-collapsed .nav-section-label { opacity: 0; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 10px; background: transparent; border: none; border-radius: var(--radius-sm);
+  color: var(--text-1); font-size: 12.5px; text-align: left; margin-bottom: 2px;
+  transition: background var(--transition), color var(--transition);
+}
+.nav-item svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.nav-item:hover { background: var(--bg-3); color: var(--text-0); }
+.nav-item.is-active { background: var(--accent-soft); color: var(--accent); }
+.nav-item .nav-badge {
+  margin-left: auto; font-family: var(--font-mono); font-size: 10px; padding: 1px 6px;
+  border-radius: 999px; background: var(--bg-3); color: var(--text-1);
+}
+.nav-item.is-active .nav-badge { background: rgba(0,212,255,0.18); color: var(--accent); }
+.sidebar.is-collapsed .nav-label, .sidebar.is-collapsed .nav-badge { display: none; }
+.nav-spacer { flex: 1; }
+.sidebar-footer { padding: 8px 10px; font-size: 10px; color: var(--text-2); font-family: var(--font-mono); }
+.sidebar.is-collapsed .sidebar-footer { display: none; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-0); }
+
+.panel { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 14px; overflow: hidden; }
+.panel[hidden] { display: none; }
+
+.panel-toolbar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.panel-title { font-size: 14px; font-weight: 600; color: var(--text-0); margin-right: auto; display: flex; align-items: center; gap: 8px; }
+.panel-title .count-pill {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-1); background: var(--bg-2);
+  border: 1px solid var(--border); padding: 1px 7px; border-radius: 999px;
+}
+
+.input, .select {
+  background: var(--bg-2); border: 1px solid var(--border); color: var(--text-0);
+  border-radius: var(--radius-sm); padding: 6px 10px; outline: none; transition: border-color var(--transition);
+}
+.input:focus, .select:focus { border-color: var(--accent-dim); }
+.input::placeholder { color: var(--text-2); }
+.search-input { width: 220px; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  background: var(--bg-2); border: 1px solid var(--border); color: var(--text-1);
+  border-radius: var(--radius-sm); font-size: 12px; font-weight: 500;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.btn:hover { background: var(--bg-3); color: var(--text-0); }
+.btn-primary { background: var(--accent-soft); border-color: rgba(0,212,255,0.35); color: var(--accent); }
+.btn-primary:hover { background: rgba(0,212,255,0.2); }
+.btn-danger { color: var(--bear); }
+.btn-sm { padding: 4px 9px; font-size: 11px; }
+.btn svg { width: 13px; height: 13px; }
+
+/* Panel body / table */
+.panel-body { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-1); }
+
+table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.data-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg-2); color: var(--text-2); text-align: left; font-weight: 600;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.data-table tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-0); white-space: nowrap; }
+.data-table tbody tr:hover { background: var(--bg-2); }
+.data-table tbody tr:last-child td { border-bottom: none; }
+.cell-mono { font-family: var(--font-mono); }
+.cell-muted { color: var(--text-2); }
+.cell-symbol { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.category-tag {
+  font-size: 10px; padding: 2px 7px; border-radius: 999px; background: var(--bg-3); color: var(--text-1);
+  font-family: var(--font-mono); letter-spacing: 0.3px;
+}
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 500; }
+.badge-neutral { background: var(--bg-3); color: var(--text-2); }
+.badge-bull { background: var(--bull-soft); color: var(--bull); }
+.badge-bear { background: var(--bear-soft); color: var(--bear); }
+.badge-pending { background: var(--violet-soft); color: var(--violet); }
+
+.star-btn {
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--text-2); border-radius: var(--radius-sm);
+  transition: color var(--transition);
+}
+.star-btn:hover { color: var(--warn); }
+.star-btn.is-active { color: var(--warn); }
+.star-btn svg { width: 14px; height: 14px; }
+
+.empty-state {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 40px 20px; color: var(--text-2); text-align: center;
+}
+.empty-state svg { width: 40px; height: 40px; opacity: 0.5; }
+.empty-state-title { font-size: 13px; color: var(--text-1); font-weight: 600; }
+.empty-state-desc { font-size: 12px; max-width: 320px; line-height: 1.5; }
+
+/* ==========================================================================
+   4. SETTINGS DRAWER
+   ========================================================================== */
+.settings-overlay {
+  position: fixed; inset: 0; background: rgba(5,7,11,0.55); z-index: 40;
+  opacity: 0; visibility: hidden; transition: opacity var(--transition), visibility var(--transition);
+}
+.settings-overlay.is-open { opacity: 1; visibility: visible; }
+
+.settings-drawer {
+  position: fixed; top: 0; right: 0; height: 100%; width: 360px; max-width: 92vw;
+  background: var(--bg-1); border-left: 1px solid var(--border); z-index: 41;
+  display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform 220ms ease;
+  box-shadow: -8px 0 24px rgba(0,0,0,0.35);
+}
+.settings-drawer.is-open { transform: translateX(0); }
+.settings-drawer[hidden] { display: none; }
+
+.drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.drawer-header h2 { font-size: 14px; margin: 0; font-weight: 600; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
+.drawer-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+.settings-section { padding: 16px 0; border-bottom: 1px solid var(--border); }
+.settings-section:last-child { border-bottom: none; }
+.settings-section h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-2);
+  margin: 0 0 12px;
+}
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
+.field-label { font-size: 12.5px; color: var(--text-0); }
+.field-hint { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.field-control-full { width: 100%; padding: 7px 0; }
+
+.switch { position: relative; display: inline-block; width: 36px; height: 20px; flex: 0 0 auto; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch-track {
+  position: absolute; inset: 0; background: var(--bg-3); border-radius: 999px; transition: background var(--transition);
+}
+.switch-track::before {
+  content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; border-radius: 50%;
+  background: var(--text-1); transition: transform var(--transition), background var(--transition);
+}
+.switch input:checked + .switch-track { background: var(--accent-soft); }
+.switch input:checked + .switch-track::before { transform: translateX(16px); background: var(--accent); }
+
+.checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.checkbox-item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-1); }
+.checkbox-item input { accent-color: var(--accent); }
+
+/* ==========================================================================
+   5. STATUS BAR
+   ========================================================================== */
+.status-bar {
+  height: var(--statusbar-h); flex: 0 0 auto; background: var(--bg-1); border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 14px;
+  font-size: 11px; color: var(--text-2); font-family: var(--font-mono);
+}
+.status-bar-group { display: flex; align-items: center; gap: 16px; }
+.status-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.status-item .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-2); }
+.status-item.is-live .status-dot { background: var(--bull); }
+.status-item.is-warn .status-dot { background: var(--warn); }
+
+/* ==========================================================================
+   6. TOASTS
+   ========================================================================== */
+.toast-container {
+  position: fixed; bottom: 40px; right: 14px; z-index: 60;
+  display: flex; flex-direction: column; gap: 8px; width: 300px; max-width: 90vw;
+}
+.toast {
+  background: var(--bg-2); border: 1px solid var(--border-light); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px; color: var(--text-0);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  animation: toast-in 200ms ease;
+}
+.toast.toast-success { border-left-color: var(--bull); }
+.toast.toast-error { border-left-color: var(--bear); }
+.toast.toast-warn { border-left-color: var(--warn); }
+.toast-title { font-weight: 600; margin-bottom: 2px; }
+.toast-desc { color: var(--text-2); font-size: 11.5px; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ==========================================================================
+   7. RESPONSIVE
+   ========================================================================== */
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed; top: var(--header-h); left: 0; bottom: var(--statusbar-h);
+    z-index: 30; width: var(--sidebar-w); transform: translateX(-100%);
+    transition: transform var(--transition);
+  }
+  .sidebar.is-mobile-open { transform: translateX(0); box-shadow: 8px 0 24px rgba(0,0,0,0.4); }
+  .sidebar.is-collapsed { width: var(--sidebar-w); }
+  .header-center { display: none; }
+  .search-input { width: 140px; }
+}
+@media (max-width: 560px) {
+  .header-clock { display: none; }
+  .conn-label { display: none; }
+  .panel-title { font-size: 13px; }
+}
+
+/* Visible keyboard focus */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+</style>
+</head>
+<body>
+
+<!-- ==========================================================================
+     LOADING SCREEN
+     ========================================================================== -->
+<div id="loading-screen" class="loading-screen">
+  <div class="loading-content">
+    <div class="loading-logo">
+      <svg viewBox="0 0 64 64" fill="none">
+        <circle cx="32" cy="32" r="30" stroke="#232936" stroke-width="2"/>
+        <circle cx="32" cy="32" r="20" stroke="#232936" stroke-width="1"/>
+        <circle cx="32" cy="32" r="10" stroke="#232936" stroke-width="1"/>
+        <g class="sweep">
+          <path d="M32 32 L32 2 A30 30 0 0 1 58 17 Z" fill="#00d4ff" fill-opacity="0.18"/>
+          <line x1="32" y1="32" x2="32" y2="2" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+        </g>
+        <circle cx="32" cy="32" r="3" fill="#00d4ff"/>
+      </svg>
+    </div>
+    <div class="loading-title">DERIV<span>SCANNER</span></div>
+    <div class="loading-status" id="loading-status-text">Initializing…</div>
+    <div class="loading-bar"><div class="loading-bar-fill" id="loading-bar-fill"></div></div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     APP SHELL
+     ========================================================================== -->
+<div id="app" class="app" hidden>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle sidebar" title="Toggle sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="brand"><span class="brand-mark"></span>Deriv<span class="brand-accent">Scanner</span></div>
+    </div>
+    <div class="header-center">
+      <div class="market-status" id="market-status"><span class="dot"></span><span>Synthetic Indices &middot; 24/7 Market</span></div>
+    </div>
+    <div class="header-right">
+      <div class="connection-indicator" id="connection-indicator" data-status="idle">
+        <span class="conn-dot"></span>
+        <span class="conn-label" id="conn-label">Disconnected</span>
+      </div>
+      <div class="header-clock" id="header-clock">--:--:--</div>
+      <button id="settings-toggle" class="icon-btn" aria-label="Open settings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="body-layout">
+
+    <!-- SIDEBAR -->
+    <nav class="sidebar" id="sidebar">
+      <div class="nav-section-label">Workspace</div>
+      <button class="nav-item is-active" data-panel="scanner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span class="nav-label">Scanner</span>
+        <span class="nav-badge" id="badge-scanner">0</span>
+      </button>
+      <button class="nav-item" data-panel="watching">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span class="nav-label">Watching</span>
+        <span class="nav-badge" id="badge-watching">0</span>
+      </button>
+      <button class="nav-item" data-panel="signals">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span class="nav-label">Active Signals</span>
+        <span class="nav-badge" id="badge-signals">0</span>
+      </button>
+      <button class="nav-item" data-panel="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+        <span class="nav-label">Signal History</span>
+        <span class="nav-badge" id="badge-history">0</span>
+      </button>
+      <div class="nav-spacer"></div>
+      <div class="nav-section-label">System</div>
+      <button class="nav-item" data-action="open-settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="nav-label">Settings</span>
+      </button>
+      <div class="sidebar-footer">v0.1.0-skeleton</div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="main" id="main">
+
+      <!-- Symbol Table / Scanner Panel -->
+      <section class="panel" id="panel-scanner" data-panel="scanner">
+        <div class="panel-toolbar">
+          <div class="panel-title">Symbol Scanner <span class="count-pill" id="scanner-count-pill">0 symbols</span></div>
+          <select class="select" id="category-filter">
+            <option value="all">All categories</option>
+          </select>
+          <input class="input search-input" id="symbol-search" type="text" placeholder="Search symbol…">
+          <button class="btn" id="scanner-toggle-btn" data-state="stopped">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span id="scanner-toggle-label">Start Scanner</span>
+          </button>
+        </div>
+        <div class="panel-body">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:30px"></th>
+                <th>Symbol</th>
+                <th>Category</th>
+                <th>Price</th>
+                <th>Change</th>
+                <th>Trend</th>
+                <th>Score</th>
+                <th>Entry Signal</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="symbol-table-body">
+              <!-- rows injected by DashboardUI -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Watching Panel -->
+      <section class="panel" id="panel-watching" data-panel="watching" hidden>
+        <div class="panel-toolbar">
+          <div class="panel-title">Watching <span class="count-pill" id="watching-count-pill">0 symbols</span></div>
+        </div>
+        <div class="panel-body" id="watching-panel-body">
+          <!-- empty state or list injected by DashboardUI -->
+        </div>
+      </section>
+
+      <!-- Active Signals Panel -->
+      <section class="panel" id="panel-signals" data-panel="signals" hidden>
+        <div class="panel-toolbar">
+          <div class="panel-title">Active Signals <span class="count-pill" id="signals-count-pill">0 active</span></div>
+        </div>
+        <div class="panel-body" id="signals-panel-body">
+          <!-- empty state or list injected by DashboardUI -->
+        </div>
+      </section>
+
+      <!-- Signal History Panel -->
+      <section class="panel" id="panel-history" data-panel="history" hidden>
+        <div class="panel-toolbar">
+          <div class="panel-title">Signal History <span class="count-pill" id="history-count-pill">0 records</span></div>
+          <button class="btn btn-sm" id="history-clear-btn">Clear history</button>
+        </div>
+        <div class="panel-body" id="history-panel-body">
+          <!-- empty state or list injected by DashboardUI -->
+        </div>
+      </section>
+
+    </main>
+
+    <!-- SETTINGS DRAWER -->
+    <div class="settings-overlay" id="settings-overlay"></div>
+    <aside class="settings-drawer" id="settings-drawer" hidden aria-label="Settings">
+      <div class="drawer-header">
+        <h2>Settings</h2>
+        <button class="icon-btn" id="settings-close-btn" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="drawer-body" id="settings-drawer-body">
+
+        <div class="settings-section">
+          <h3>Scanner</h3>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Scan interval</div>
+              <div class="field-hint">How often the scanner cycle runs</div>
+            </div>
+            <select class="select" id="setting-scan-interval">
+              <option value="1000">1s</option>
+              <option value="2000">2s</option>
+              <option value="5000">5s</option>
+              <option value="10000">10s</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Auto-start scanner</div>
+              <div class="field-hint">Start scanning automatically on load</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="setting-auto-start">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Watchlist symbols</h3>
+          <div class="field-control-full">
+            <div class="checkbox-grid" id="settings-symbol-checkboxes"><!-- injected --></div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Alerts</h3>
+          <div class="field-row">
+            <div class="field-label">Sound on new signal</div>
+            <label class="switch">
+              <input type="checkbox" id="setting-alert-sound">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="field-row">
+            <div class="field-label">Desktop notifications</div>
+            <label class="switch">
+              <input type="checkbox" id="setting-alert-desktop">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="field-row">
+            <div class="field-label">Toast notifications</div>
+            <label class="switch">
+              <input type="checkbox" id="setting-alert-toast">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Display</h3>
+          <div class="field-row">
+            <div class="field-label">Compact table rows</div>
+            <label class="switch">
+              <input type="checkbox" id="setting-compact-rows">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Data feed</h3>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Feed mode</div>
+              <div class="field-hint">Live connection wiring is added in a later phase</div>
+            </div>
+            <select class="select" id="setting-feed-mode">
+              <option value="mock">Mock (simulated)</option>
+              <option value="live" disabled>Live (not yet available)</option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+      <div class="drawer-footer">
+        <button class="btn" id="settings-reset-btn">Reset defaults</button>
+        <button class="btn btn-primary" id="settings-save-btn">Save changes</button>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- STATUS BAR -->
+  <footer class="status-bar" id="status-bar">
+    <div class="status-bar-group">
+      <div class="status-item" id="status-feed"><span class="status-dot"></span><span id="status-feed-text">Feed: disconnected</span></div>
+      <div class="status-item" id="status-scanner"><span class="status-dot"></span><span id="status-scanner-text">Scanner: idle</span></div>
+      <div class="status-item"><span id="status-scanned-text">Scanned: 0/0</span></div>
+    </div>
+    <div class="status-bar-group">
+      <div class="status-item"><span id="status-latency-text">Latency: -- ms</span></div>
+      <div class="status-item"><span id="status-lastupdate-text">Last update: --</span></div>
+      <div class="status-item"><span>Deriv Synthetic Indices Scanner v0.1.0</span></div>
+    </div>
+  </footer>
+
+</div>
+
+<!-- TOASTS -->
+<div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+
+<script>
+"use strict";
+/* ============================================================================
+   DERIV SYNTHETIC INDICES SCANNER
+   ----------------------------------------------------------------------------
+   Architecture-only skeleton. Every analytical module (TrendEngine,
+   TrendScoreCalculator, EntryEngine) is a placeholder: it returns a well
+   defined "not implemented" shape so the UI and orchestration layer can be
+   fully built and exercised before any real trading logic exists.
+
+   Module map:
+     Utils               - stateless helpers
+     EventBus             - pub/sub backbone used by every module
+     Config                - static reference data & defaults
+     StateManager           - single source of truth + subscriptions
+     DataFeedManager          - connection lifecycle + tick plumbing (mocked)
+     TrendEngine                - PLACEHOLDER: trend detection
+     TrendScoreCalculator         - PLACEHOLDER: trend scoring
+     EntryEngine                    - PLACEHOLDER: entry signal evaluation
+     ScannerManager                   - orchestrates the pipeline above
+     AlertsManager                      - toast/sound/notification delivery
+     SettingsManager                      - persisted user settings
+     DashboardUI                            - renders + wires the DOM
+     App                                      - bootstrap / init sequence
+   ==========================================================================*/
+
+
+/* ============================================================================
+   UTILS
+   ==========================================================================*/
+const Utils = (() => {
+  function qs(selector, scope) { return (scope || document).querySelector(selector); }
+  function qsa(selector, scope) { return Array.from((scope || document).querySelectorAll(selector)); }
+
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach((key) => {
+        if (key === "class") node.className = attrs[key];
+        else if (key === "dataset") Object.assign(node.dataset, attrs[key]);
+        else if (key.startsWith("on") && typeof attrs[key] === "function") node.addEventListener(key.slice(2), attrs[key]);
+        else node.setAttribute(key, attrs[key]);
+      });
+    }
+    (children || []).forEach((child) => {
+      if (child === null || child === undefined) return;
+      node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+    });
+    return node;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
+  function formatTime(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(d.getTime())) return "--:--:--";
+    return d.toLocaleTimeString(undefined, { hour12: false });
+  }
+
+  function formatRelative(date) {
+    if (!date) return "--";
+    const diffMs = Date.now() - (date instanceof Date ? date.getTime() : date);
+    const s = Math.max(0, Math.round(diffMs / 1000));
+    if (s < 1) return "just now";
+    if (s < 60) return s + "s ago";
+    const m = Math.round(s / 60);
+    if (m < 60) return m + "m ago";
+    const h = Math.round(m / 60);
+    return h + "h ago";
+  }
+
+  function formatPrice(value, decimals) {
+    if (value === null || value === undefined || Number.isNaN(value)) return "—";
+    return Number(value).toFixed(decimals === undefined ? 3 : decimals);
+  }
+
+  function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+
+  function debounce(fn, wait) {
+    let timer = null;
+    return function debounced(...args) {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn.apply(this, args), wait);
+    };
+  }
+
+  function uid(prefix) {
+    return (prefix || "id") + "_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  }
+
+  function getPath(obj, path) {
+    return path.split(".").reduce((acc, key) => (acc === undefined || acc === null ? undefined : acc[key]), obj);
+  }
+
+  function setPath(obj, path, value) {
+    const keys = path.split(".");
+    let cursor = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      const key = keys[i];
+      if (typeof cursor[key] !== "object" || cursor[key] === null) cursor[key] = {};
+      cursor = cursor[key];
+    }
+    cursor[keys[keys.length - 1]] = value;
+    return obj;
+  }
+
+  return { qs, qsa, el, escapeHtml, formatTime, formatRelative, formatPrice, clamp, debounce, uid, getPath, setPath };
+})();
+
+
+/* ============================================================================
+   EVENT BUS
+   ==========================================================================*/
+class EventBus {
+  constructor() {
+    this._listeners = new Map();
+  }
+  on(eventName, handler) {
+    if (!this._listeners.has(eventName)) this._listeners.set(eventName, new Set());
+    this._listeners.get(eventName).add(handler);
+    return () => this.off(eventName, handler);
+  }
+  once(eventName, handler) {
+    const off = this.on(eventName, (...args) => { off(); handler(...args); });
+    return off;
+  }
+  off(eventName, handler) {
+    if (this._listeners.has(eventName)) this._listeners.get(eventName).delete(handler);
+  }
+  emit(eventName, payload) {
+    if (!this._listeners.has(eventName)) return;
+    this._listeners.get(eventName).forEach((handler) => {
+      try { handler(payload); }
+      catch (err) { console.error(`[EventBus] handler for "${eventName}" threw:`, err); }
+    });
+  }
+}
+
+/* Events reference (documented centrally so later phases know what to hook into):
+   datafeed:status        {status, message}
+   datafeed:tick          {symbolId, price, timestamp}
+   datafeed:error         {message}
+   scanner:status         {status}
+   scanner:cycle-start     {}
+   scanner:cycle-complete    {scannedCount, totalCount, durationMs}
+   scanner:symbol-updated      {symbolId, row}
+   signals:new                   {signal}
+   signals:cleared                  {}
+   settings:changed                   {settings}
+   state:change                         {path, value}
+   state:change:<path>                    {value}
+   ui:panel-changed                         {panel}
+   alerts:toast                               {type, title, message}
+*/
+
+
+/* ============================================================================
+   CONFIG
+   ==========================================================================*/
+const Config = (() => {
+  // Reference symbol catalogue for Deriv synthetic indices. IDs are placeholders
+  // aligned to Deriv's public symbol naming convention; verify against the live
+  // Deriv API symbol list when the real Data Feed integration is implemented.
+  const SYMBOLS = [
+    { id: "R_10", name: "Volatility 10 Index", category: "Volatility" },
+    { id: "R_25", name: "Volatility 25 Index", category: "Volatility" },
+    { id: "R_50", name: "Volatility 50 Index", category: "Volatility" },
+    { id: "R_75", name: "Volatility 75 Index", category: "Volatility" },
+    { id: "R_100", name: "Volatility 100 Index", category: "Volatility" },
+    { id: "1HZ10V", name: "Volatility 10 (1s) Index", category: "Volatility (1s)" },
+    { id: "1HZ25V", name: "Volatility 25 (1s) Index", category: "Volatility (1s)" },
+    { id: "1HZ50V", name: "Volatility 50 (1s) Index", category: "Volatility (1s)" },
+    { id: "1HZ75V", name: "Volatility 75 (1s) Index", category: "Volatility (1s)" },
+    { id: "1HZ100V", name: "Volatility 100 (1s) Index", category: "Volatility (1s)" },
+    { id: "BOOM300N", name: "Boom 300 Index", category: "Boom" },
+    { id: "BOOM500", name: "Boom 500 Index", category: "Boom" },
+    { id: "BOOM1000", name: "Boom 1000 Index", category: "Boom" },
+    { id: "CRASH300N", name: "Crash 300 Index", category: "Crash" },
+    { id: "CRASH500", name: "Crash 500 Index", category: "Crash" },
+    { id: "CRASH1000", name: "Crash 1000 Index", category: "Crash" },
+    { id: "JD10", name: "Jump 10 Index", category: "Jump" },
+    { id: "JD25", name: "Jump 25 Index", category: "Jump" },
+    { id: "JD50", name: "Jump 50 Index", category: "Jump" },
+    { id: "JD75", name: "Jump 75 Index", category: "Jump" },
+    { id: "JD100", name: "Jump 100 Index", category: "Jump" },
+    { id: "STPRNG", name: "Step Index", category: "Step" }
+  ];
+
+  const CATEGORIES = Array.from(new Set(SYMBOLS.map((s) => s.category)));
+
+  const DEFAULT_SETTINGS = {
+    scanIntervalMs: 2000,
+    autoStartScanner: false,
+    watchlist: ["R_10", "R_25", "R_100"],
+    alerts: { sound: true, desktop: false, toast: true },
+    display: { compactRows: false },
+    feedMode: "mock"
+  };
+
+  const STORAGE_KEY = "deriv-scanner:settings:v1";
+
+  return { SYMBOLS, CATEGORIES, DEFAULT_SETTINGS, STORAGE_KEY };
+})();
+
+
+/* ============================================================================
+   STATE MANAGER
+   ----------------------------------------------------------------------------
+   Single source of truth for the app. Other modules read/write through here
+   and subscribe to path-based changes instead of talking to each other
+   directly, which keeps the module graph loosely coupled.
+   ==========================================================================*/
+class StateManager {
+  constructor(eventBus) {
+    this._bus = eventBus;
+    this._state = {
+      connection: { status: "idle", latency: null, lastMessageAt: null },
+      scanner: { status: "idle", lastCycleAt: null, scannedCount: 0, totalCount: 0 },
+      symbols: {},        // symbolId -> row data (price/trend/score/entry placeholders)
+      watchlist: [],       // array of symbolIds
+      activeSignals: [],    // array of signal objects (empty until Entry Engine phase)
+      signalHistory: [],     // array of historical signal records
+      settings: {},            // populated by SettingsManager
+      ui: { activePanel: "scanner", sidebarCollapsed: false, settingsOpen: false }
+    };
+  }
+
+  getState() { return this._state; }
+
+  get(path) {
+    if (!path) return this._state;
+    return Utils.getPath(this._state, path);
+  }
+
+  set(path, value) {
+    Utils.setPath(this._state, path, value);
+    this._bus.emit("state:change", { path, value });
+    this._bus.emit(`state:change:${path}`, { value });
+    return value;
+  }
+
+  subscribe(path, handler) {
+    return this._bus.on(`state:change:${path}`, handler);
+  }
+
+  subscribeAny(handler) {
+    return this._bus.on("state:change", handler);
+  }
+}
+
+
+/* ============================================================================
+   DATA FEED MANAGER
+   ----------------------------------------------------------------------------
+   Owns the connection lifecycle to the price feed. In this phase the real
+   Deriv WebSocket API is NOT connected - a mock feed simulates connection
+   states and heartbeat ticks so the rest of the architecture (state, UI,
+   scanner loop) can be built and demoed end-to-end. Swap `_mockConnect`
+   for a real WebSocket implementation in a later phase without touching
+   any other module, since consumers only depend on the public methods
+   and emitted events below.
+   ==========================================================================*/
+class DataFeedManager {
+  constructor(eventBus, stateManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._subscriptions = new Map(); // symbolId -> Set<callback>
+    this._heartbeatTimer = null;
+    this._mockPrices = new Map();
+  }
+
+  getStatus() {
+    return this._state.get("connection.status");
+  }
+
+  connect() {
+    if (this.getStatus() === "connected" || this.getStatus() === "connecting") return;
+    this._setStatus("connecting", "Connecting to data feed…");
+    // TODO(phase-2): replace with real Deriv WebSocket handshake
+    // e.g. new WebSocket(`wss://ws.derivws.com/websockets/v3?app_id=<APP_ID>`)
+    window.setTimeout(() => {
+      this._setStatus("connected", "Data feed connected");
+      this._startHeartbeat();
+    }, 900);
+  }
+
+  disconnect() {
+    this._stopHeartbeat();
+    this._setStatus("disconnected", "Data feed disconnected");
+  }
+
+  subscribeSymbol(symbolId, callback) {
+    if (!this._subscriptions.has(symbolId)) this._subscriptions.set(symbolId, new Set());
+    if (callback) this._subscriptions.get(symbolId).add(callback);
+    return () => this.unsubscribeSymbol(symbolId, callback);
+  }
+
+  unsubscribeSymbol(symbolId, callback) {
+    if (!this._subscriptions.has(symbolId)) return;
+    if (callback) this._subscriptions.get(symbolId).delete(callback);
+    else this._subscriptions.delete(symbolId);
+  }
+
+  getSubscribedSymbols() {
+    return Array.from(this._subscriptions.keys());
+  }
+
+  getLatestPrice(symbolId) {
+    return this._mockPrices.has(symbolId) ? this._mockPrices.get(symbolId) : null;
+  }
+
+  _setStatus(status, message) {
+    this._state.set("connection.status", status);
+    this._bus.emit("datafeed:status", { status, message });
+  }
+
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    this._heartbeatTimer = window.setInterval(() => {
+      const latency = Math.round(40 + Math.random() * 90);
+      this._state.set("connection.latency", latency);
+      this._state.set("connection.lastMessageAt", Date.now());
+
+      // Emit a mock tick per subscribed symbol so downstream placeholder
+      // modules (TrendEngine etc.) have *something* to be called with.
+      this._subscriptions.forEach((callbacks, symbolId) => {
+        const prev = this._mockPrices.get(symbolId) || (100 + Math.random() * 900);
+        const next = Math.max(0.0001, prev + (Math.random() - 0.5) * prev * 0.002);
+        this._mockPrices.set(symbolId, next);
+        const tick = { symbolId, price: next, timestamp: Date.now() };
+        callbacks.forEach((cb) => { try { cb(tick); } catch (e) { console.error(e); } });
+        this._bus.emit("datafeed:tick", tick);
+      });
+    }, 1000);
+  }
+
+  _stopHeartbeat() {
+    if (this._heartbeatTimer) { window.clearInterval(this._heartbeatTimer); this._heartbeatTimer = null; }
+  }
+}
+
+
+/* ============================================================================
+   TREND ENGINE  (PLACEHOLDER — no trading logic yet)
+   ----------------------------------------------------------------------------
+   Responsible, in a later phase, for detecting trend direction/strength from
+   price history for a given symbol/timeframe. For now it returns a fixed
+   "not implemented" shape so consumers (ScannerManager, UI) can be wired up
+   against a stable contract.
+   ==========================================================================*/
+class TrendEngine {
+  constructor(eventBus, stateManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+  }
+
+  /**
+   * @param {string} symbolId
+   * @param {{price:number, timestamp:number}} latestTick
+   * @returns {{symbolId:string, direction:('neutral'|'bullish'|'bearish'), confidence:(number|null), status:string, computedAt:number}}
+   */
+  analyze(symbolId, latestTick) {
+    // PLACEHOLDER — Phase 2 will implement real trend detection
+    // (e.g. moving averages, higher-highs/lows structure, ADX, etc).
+    return {
+      symbolId,
+      direction: "neutral",
+      confidence: null,
+      status: "not_implemented",
+      computedAt: Date.now()
+    };
+  }
+}
+
+
+/* ============================================================================
+   TREND SCORE CALCULATOR  (PLACEHOLDER — no trading logic yet)
+   ----------------------------------------------------------------------------
+   Will translate a TrendEngine result (and possibly other factors) into a
+   normalized score used for ranking/filtering symbols. Currently a stub.
+   ==========================================================================*/
+class TrendScoreCalculator {
+  constructor(eventBus, stateManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+  }
+
+  /**
+   * @param {object} trendResult - output of TrendEngine.analyze
+   * @returns {{score:(number|null), grade:(string|null), status:string}}
+   */
+  calculateScore(trendResult) {
+    // PLACEHOLDER — Phase 3 will implement real scoring rules.
+    return { score: null, grade: null, status: "not_implemented" };
+  }
+}
+
+
+/* ============================================================================
+   ENTRY ENGINE  (PLACEHOLDER — no trading logic yet)
+   ----------------------------------------------------------------------------
+   Will evaluate whether a symbol's current trend/score qualifies as an entry
+   signal (and eventually produce direction, confidence, invalidation, etc).
+   Currently a stub that never produces a signal.
+   ==========================================================================*/
+class EntryEngine {
+  constructor(eventBus, stateManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+  }
+
+  /**
+   * @param {string} symbolId
+   * @param {object} trendResult
+   * @param {object} scoreResult
+   * @returns {{hasSignal:boolean, signal:(object|null), status:string}}
+   */
+  evaluate(symbolId, trendResult, scoreResult) {
+    // PLACEHOLDER — Phase 4 will implement real entry-condition logic and
+    // start pushing objects into StateManager("activeSignals").
+    return { hasSignal: false, signal: null, status: "not_implemented" };
+  }
+}
+
+
+/* ============================================================================
+   SCANNER MANAGER
+   ----------------------------------------------------------------------------
+   Orchestrates the pipeline: DataFeedManager -> TrendEngine ->
+   TrendScoreCalculator -> EntryEngine, on an interval, for every watched
+   symbol. Even though the analytical modules are placeholders, this class
+   defines the real control flow later phases will plug real logic into
+   without any structural changes.
+   ==========================================================================*/
+class ScannerManager {
+  constructor({ eventBus, stateManager, dataFeed, trendEngine, scoreCalculator, entryEngine, settingsManager }) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._dataFeed = dataFeed;
+    this._trendEngine = trendEngine;
+    this._scoreCalculator = scoreCalculator;
+    this._entryEngine = entryEngine;
+    this._settings = settingsManager;
+    this._timer = null;
+  }
+
+  getStatus() { return this._state.get("scanner.status"); }
+
+  start() {
+    if (this.getStatus() === "running") return;
+    this._state.set("scanner.status", "running");
+    this._bus.emit("scanner:status", { status: "running" });
+    this._tick(); // run immediately, then on interval
+    const intervalMs = this._settings.get("scanIntervalMs") || 2000;
+    this._timer = window.setInterval(() => this._tick(), intervalMs);
+  }
+
+  stop() {
+    if (this._timer) { window.clearInterval(this._timer); this._timer = null; }
+    this._state.set("scanner.status", "idle");
+    this._bus.emit("scanner:status", { status: "idle" });
+  }
+
+  restartWithNewInterval() {
+    const wasRunning = this.getStatus() === "running";
+    this.stop();
+    if (wasRunning) this.start();
+  }
+
+  scanOnce() { this._tick(); }
+
+  _tick() {
+    const startedAt = performance.now();
+    this._bus.emit("scanner:cycle-start", {});
+
+    const watchlist = this._state.get("watchlist") || [];
+    let scanned = 0;
+
+    watchlist.forEach((symbolId) => {
+      const meta = Config.SYMBOLS.find((s) => s.id === symbolId);
+      if (!meta) return;
+
+      const latestTick = { symbolId, price: this._dataFeed.getLatestPrice(symbolId), timestamp: Date.now() };
+      const trendResult = this._trendEngine.analyze(symbolId, latestTick);
+      const scoreResult = this._scoreCalculator.calculateScore(trendResult);
+      const entryResult = this._entryEngine.evaluate(symbolId, trendResult, scoreResult);
+
+      const row = {
+        symbolId,
+        name: meta.name,
+        category: meta.category,
+        price: latestTick.price,
+        trend: trendResult,
+        score: scoreResult,
+        entry: entryResult,
+        updatedAt: Date.now()
+      };
+
+      this._state.set(`symbols.${symbolId}`, row);
+      this._bus.emit("scanner:symbol-updated", { symbolId, row });
+      scanned++;
+    });
+
+    this._state.set("scanner.scannedCount", scanned);
+    this._state.set("scanner.totalCount", watchlist.length);
+    this._state.set("scanner.lastCycleAt", Date.now());
+
+    const durationMs = Math.round(performance.now() - startedAt);
+    this._bus.emit("scanner:cycle-complete", { scannedCount: scanned, totalCount: watchlist.length, durationMs });
+  }
+}
+
+
+/* ============================================================================
+   ALERTS MANAGER
+   ----------------------------------------------------------------------------
+   Delivers user-facing notifications (toast / sound / desktop). It listens
+   for "signals:new" so that once the Entry Engine is implemented and starts
+   emitting real signals, alerts will start firing with zero changes here.
+   ==========================================================================*/
+class AlertsManager {
+  constructor(eventBus, stateManager, settingsManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._settings = settingsManager;
+    this._toastContainer = null;
+  }
+
+  init() {
+    this._toastContainer = Utils.qs("#toast-container");
+    this._bus.on("signals:new", ({ signal }) => this._handleNewSignal(signal));
+    this._bus.on("alerts:toast", ({ type, title, message }) => this.showToast(type, title, message));
+  }
+
+  _handleNewSignal(signal) {
+    // PLACEHOLDER — wired for when EntryEngine starts emitting real signals.
+    const alerts = this._settings.get("alerts") || {};
+    if (alerts.toast) this.showToast("success", "New signal", `${signal.symbolId}: signal detected`);
+    if (alerts.sound) this._playSound();
+    if (alerts.desktop) this._showDesktopNotification(signal);
+  }
+
+  showToast(type, title, message) {
+    if (!this._toastContainer) return;
+    const toast = Utils.el("div", { class: `toast toast-${type || "info"}` }, [
+      Utils.el("div", { class: "toast-title" }, [title]),
+      message ? Utils.el("div", { class: "toast-desc" }, [message]) : null
+    ]);
+    this._toastContainer.appendChild(toast);
+    window.setTimeout(() => { toast.remove(); }, 4500);
+  }
+
+  _playSound() {
+    // PLACEHOLDER — a short embedded beep can be added in a later phase
+    // (e.g. via WebAudio oscillator) once real signals exist.
+  }
+
+  _showDesktopNotification(signal) {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      new Notification("Deriv Scanner", { body: `${signal.symbolId}: signal detected` });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }
+}
+
+
+/* ============================================================================
+   SETTINGS MANAGER
+   ----------------------------------------------------------------------------
+   Loads/saves user settings (persisted via localStorage since this app runs
+   as a standalone file in the user's own browser). Falls back gracefully to
+   in-memory defaults if storage is unavailable (e.g. file:// restrictions).
+   ==========================================================================*/
+class SettingsManager {
+  constructor(eventBus, stateManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._settings = JSON.parse(JSON.stringify(Config.DEFAULT_SETTINGS));
+  }
+
+  init() {
+    this._settings = this._load();
+    this._state.set("settings", this._settings);
+    this._state.set("watchlist", this._settings.watchlist.slice());
+  }
+
+  get(key) { return key ? Utils.getPath(this._settings, key) : this._settings; }
+
+  getAll() { return JSON.parse(JSON.stringify(this._settings)); }
+
+  update(partial) {
+    this._settings = Object.assign({}, this._settings, partial);
+    this._persist();
+    this._state.set("settings", this._settings);
+    this._bus.emit("settings:changed", { settings: this.getAll() });
+  }
+
+  resetToDefaults() {
+    this._settings = JSON.parse(JSON.stringify(Config.DEFAULT_SETTINGS));
+    this._persist();
+    this._state.set("settings", this._settings);
+    this._state.set("watchlist", this._settings.watchlist.slice());
+    this._bus.emit("settings:changed", { settings: this.getAll() });
+  }
+
+  _load() {
+    try {
+      const raw = window.localStorage.getItem(Config.STORAGE_KEY);
+      if (!raw) return JSON.parse(JSON.stringify(Config.DEFAULT_SETTINGS));
+      const parsed = JSON.parse(raw);
+      return Object.assign({}, Config.DEFAULT_SETTINGS, parsed);
+    } catch (err) {
+      console.warn("[SettingsManager] falling back to defaults:", err);
+      return JSON.parse(JSON.stringify(Config.DEFAULT_SETTINGS));
+    }
+  }
+
+  _persist() {
+    try {
+      window.localStorage.setItem(Config.STORAGE_KEY, JSON.stringify(this._settings));
+    } catch (err) {
+      console.warn("[SettingsManager] could not persist settings:", err);
+    }
+  }
+}
+
+
+/* ============================================================================
+   DASHBOARD UI
+   ----------------------------------------------------------------------------
+   Owns all DOM rendering and event wiring. Subscribes to StateManager so it
+   never needs to be told to refresh - it reacts to state changes emitted by
+   every other module.
+   ==========================================================================*/
+class DashboardUI {
+  constructor({ eventBus, stateManager, settingsManager, dataFeed, scannerManager, alertsManager }) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._settings = settingsManager;
+    this._dataFeed = dataFeed;
+    this._scanner = scannerManager;
+    this._alerts = alertsManager;
+    this._dom = {};
+  }
+
+  init() {
+    this._cacheDom();
+    this._bindStaticEvents();
+    this._populateCategoryFilter();
+    this._populateSettingsSymbolCheckboxes();
+    this._syncSettingsForm();
+    this._renderSymbolTable();
+    this._renderWatchingPanel();
+    this._renderActiveSignals();
+    this._renderSignalHistory();
+    this._subscribeToState();
+    this._startClock();
+  }
+
+  _cacheDom() {
+    const $ = Utils.qs;
+    this._dom = {
+      app: $("#app"),
+      sidebar: $("#sidebar"),
+      sidebarToggle: $("#sidebar-toggle"),
+      navItems: Utils.qsa(".nav-item[data-panel]"),
+      panels: Utils.qsa(".panel[data-panel]"),
+      settingsToggle: $("#settings-toggle"),
+      settingsOverlay: $("#settings-overlay"),
+      settingsDrawer: $("#settings-drawer"),
+      settingsCloseBtn: $("#settings-close-btn"),
+      settingsSaveBtn: $("#settings-save-btn"),
+      settingsResetBtn: $("#settings-reset-btn"),
+      connIndicator: $("#connection-indicator"),
+      connLabel: $("#conn-label"),
+      headerClock: $("#header-clock"),
+
+      categoryFilter: $("#category-filter"),
+      symbolSearch: $("#symbol-search"),
+      symbolTableBody: $("#symbol-table-body"),
+      scannerCountPill: $("#scanner-count-pill"),
+      scannerToggleBtn: $("#scanner-toggle-btn"),
+      scannerToggleLabel: $("#scanner-toggle-label"),
+
+      watchingBody: $("#watching-panel-body"),
+      watchingCountPill: $("#watching-count-pill"),
+
+      signalsBody: $("#signals-panel-body"),
+      signalsCountPill: $("#signals-count-pill"),
+
+      historyBody: $("#history-panel-body"),
+      historyCountPill: $("#history-count-pill"),
+      historyClearBtn: $("#history-clear-btn"),
+
+      badgeScanner: $("#badge-scanner"),
+      badgeWatching: $("#badge-watching"),
+      badgeSignals: $("#badge-signals"),
+      badgeHistory: $("#badge-history"),
+
+      statusFeedText: $("#status-feed-text"),
+      statusFeedItem: $("#status-feed"),
+      statusScannerText: $("#status-scanner-text"),
+      statusScannerItem: $("#status-scanner"),
+      statusScannedText: $("#status-scanned-text"),
+      statusLatencyText: $("#status-latency-text"),
+      statusLastUpdateText: $("#status-lastupdate-text"),
+
+      settingScanInterval: $("#setting-scan-interval"),
+      settingAutoStart: $("#setting-auto-start"),
+      settingAlertSound: $("#setting-alert-sound"),
+      settingAlertDesktop: $("#setting-alert-desktop"),
+      settingAlertToast: $("#setting-alert-toast"),
+      settingCompactRows: $("#setting-compact-rows"),
+      settingFeedMode: $("#setting-feed-mode"),
+      settingsSymbolCheckboxes: $("#settings-symbol-checkboxes")
+    };
+  }
+
+  _bindStaticEvents() {
+    const d = this._dom;
+
+    d.sidebarToggle.addEventListener("click", () => this._toggleSidebar());
+
+    d.navItems.forEach((btn) => {
+      btn.addEventListener("click", () => this._setActivePanel(btn.dataset.panel));
+    });
+    Utils.qsa('[data-action="open-settings"]').forEach((btn) => btn.addEventListener("click", () => this._openSettings()));
+
+    d.settingsToggle.addEventListener("click", () => this._openSettings());
+    d.settingsCloseBtn.addEventListener("click", () => this._closeSettings());
+    d.settingsOverlay.addEventListener("click", () => this._closeSettings());
+    d.settingsSaveBtn.addEventListener("click", () => this._saveSettingsForm());
+    d.settingsResetBtn.addEventListener("click", () => {
+      this._settings.resetToDefaults();
+      this._syncSettingsForm();
+      this._populateSettingsSymbolCheckboxes();
+      this._bus.emit("alerts:toast", { type: "info", title: "Settings reset", message: "Defaults restored." });
+    });
+
+    d.categoryFilter.addEventListener("change", () => this._renderSymbolTable());
+    d.symbolSearch.addEventListener("input", Utils.debounce(() => this._renderSymbolTable(), 150));
+
+    d.scannerToggleBtn.addEventListener("click", () => {
+      if (this._scanner.getStatus() === "running") this._scanner.stop();
+      else this._scanner.start();
+    });
+
+    d.historyClearBtn.addEventListener("click", () => {
+      this._state.set("signalHistory", []);
+      this._bus.emit("alerts:toast", { type: "info", title: "History cleared" });
+    });
+
+    window.addEventListener("resize", Utils.debounce(() => this._handleResize(), 120));
+  }
+
+  _subscribeToState() {
+    this._state.subscribe("connection.status", ({ value }) => this._updateConnectionIndicator(value));
+    this._state.subscribe("connection.latency", ({ value }) => { this._dom.statusLatencyText.textContent = `Latency: ${value === null ? "--" : value + " ms"}`; });
+    this._state.subscribe("connection.lastMessageAt", ({ value }) => { this._dom.statusLastUpdateText.textContent = `Last update: ${Utils.formatTime(value)}`; });
+
+    this._state.subscribe("scanner.status", ({ value }) => this._updateScannerStatus(value));
+    this._state.subscribe("scanner.scannedCount", () => this._updateScannedCounter());
+    this._state.subscribe("scanner.totalCount", () => this._updateScannedCounter());
+
+    this._state.subscribe("symbols", () => { this._renderSymbolTable(); this._renderWatchingPanel(); });
+    this._state.subscribe("watchlist", () => { this._renderSymbolTable(); this._renderWatchingPanel(); this._populateSettingsSymbolCheckboxes(); });
+    this._state.subscribe("activeSignals", () => this._renderActiveSignals());
+    this._state.subscribe("signalHistory", () => this._renderSignalHistory());
+
+    this._bus.on("scanner:symbol-updated", ({ symbolId, row }) => this._updateSymbolRow(symbolId, row));
+  }
+
+  /* ---------- panel / sidebar / settings ---------- */
+
+  _toggleSidebar() {
+    const isMobile = window.innerWidth <= 900;
+    if (isMobile) { this._dom.sidebar.classList.toggle("is-mobile-open"); return; }
+    const collapsed = this._dom.sidebar.classList.toggle("is-collapsed");
+    this._state.set("ui.sidebarCollapsed", collapsed);
+  }
+
+  _handleResize() {
+    if (window.innerWidth > 900) this._dom.sidebar.classList.remove("is-mobile-open");
+  }
+
+  _setActivePanel(panelName) {
+    this._dom.navItems.forEach((btn) => btn.classList.toggle("is-active", btn.dataset.panel === panelName));
+    this._dom.panels.forEach((panel) => { panel.hidden = panel.dataset.panel !== panelName; });
+    this._state.set("ui.activePanel", panelName);
+    this._bus.emit("ui:panel-changed", { panel: panelName });
+    if (window.innerWidth <= 900) this._dom.sidebar.classList.remove("is-mobile-open");
+  }
+
+  _openSettings() {
+    this._dom.settingsDrawer.hidden = false;
+    this._dom.settingsOverlay.classList.add("is-open");
+    requestAnimationFrame(() => this._dom.settingsDrawer.classList.add("is-open"));
+    this._state.set("ui.settingsOpen", true);
+  }
+
+  _closeSettings() {
+    this._dom.settingsDrawer.classList.remove("is-open");
+    this._dom.settingsOverlay.classList.remove("is-open");
+    this._state.set("ui.settingsOpen", false);
+    window.setTimeout(() => { if (!this._dom.settingsDrawer.classList.contains("is-open")) this._dom.settingsDrawer.hidden = true; }, 220);
+  }
+
+  /* ---------- settings form ---------- */
+
+  _populateCategoryFilter() {
+    const select = this._dom.categoryFilter;
+    Config.CATEGORIES.forEach((cat) => {
+      const opt = Utils.el("option", { value: cat }, [cat]);
+      select.appendChild(opt);
+    });
+  }
+
+  _populateSettingsSymbolCheckboxes() {
+    const container = this._dom.settingsSymbolCheckboxes;
+    const watchlist = new Set(this._state.get("watchlist") || []);
+    container.innerHTML = "";
+    Config.SYMBOLS.forEach((sym) => {
+      const id = `wl-${sym.id}`;
+      const label = Utils.el("label", { class: "checkbox-item", for: id }, [
+        Utils.el("input", { type: "checkbox", id, dataset: { symbolId: sym.id }, ...(watchlist.has(sym.id) ? { checked: "checked" } : {}) }),
+        sym.name
+      ]);
+      const input = label.querySelector("input");
+      input.checked = watchlist.has(sym.id);
+      input.addEventListener("change", () => this._toggleWatch(sym.id, input.checked));
+      container.appendChild(label);
+    });
+  }
+
+  _syncSettingsForm() {
+    const s = this._settings.getAll();
+    this._dom.settingScanInterval.value = String(s.scanIntervalMs);
+    this._dom.settingAutoStart.checked = !!s.autoStartScanner;
+    this._dom.settingAlertSound.checked = !!s.alerts.sound;
+    this._dom.settingAlertDesktop.checked = !!s.alerts.desktop;
+    this._dom.settingAlertToast.checked = !!s.alerts.toast;
+    this._dom.settingCompactRows.checked = !!s.display.compactRows;
+    this._dom.settingFeedMode.value = s.feedMode;
+  }
+
+  _saveSettingsForm() {
+    const d = this._dom;
+    this._settings.update({
+      scanIntervalMs: Number(d.settingScanInterval.value),
+      autoStartScanner: d.settingAutoStart.checked,
+      alerts: {
+        sound: d.settingAlertSound.checked,
+        desktop: d.settingAlertDesktop.checked,
+        toast: d.settingAlertToast.checked
+      },
+      display: { compactRows: d.settingCompactRows.checked },
+      feedMode: d.settingFeedMode.value
+    });
+    this._scanner.restartWithNewInterval();
+    document.body.classList.toggle("compact-rows", d.settingCompactRows.checked);
+    this._bus.emit("alerts:toast", { type: "success", title: "Settings saved" });
+    this._closeSettings();
+  }
+
+  _toggleWatch(symbolId, isWatched) {
+    const current = new Set(this._state.get("watchlist") || []);
+    if (isWatched) current.add(symbolId); else current.delete(symbolId);
+    const next = Array.from(current);
+    this._state.set("watchlist", next);
+    this._settings.update({ watchlist: next });
+  }
+
+  /* ---------- connection / scanner status ---------- */
+
+  _updateConnectionIndicator(status) {
+    const labels = { idle: "Disconnected", connecting: "Connecting…", connected: "Connected", disconnected: "Disconnected", error: "Connection error" };
+    this._dom.connIndicator.dataset.status = status;
+    this._dom.connLabel.textContent = labels[status] || status;
+    this._dom.statusFeedText.textContent = `Feed: ${(labels[status] || status).toLowerCase()}`;
+    this._dom.statusFeedItem.classList.toggle("is-live", status === "connected");
+    this._dom.statusFeedItem.classList.toggle("is-warn", status === "connecting");
+  }
+
+  _updateScannerStatus(status) {
+    this._dom.statusScannerText.textContent = `Scanner: ${status}`;
+    this._dom.statusScannerItem.classList.toggle("is-live", status === "running");
+    this._dom.scannerToggleBtn.dataset.state = status === "running" ? "running" : "stopped";
+    this._dom.scannerToggleLabel.textContent = status === "running" ? "Stop Scanner" : "Start Scanner";
+  }
+
+  _updateScannedCounter() {
+    const scanned = this._state.get("scanner.scannedCount") || 0;
+    const total = this._state.get("scanner.totalCount") || 0;
+    this._dom.statusScannedText.textContent = `Scanned: ${scanned}/${total}`;
+  }
+
+  /* ---------- symbol table ---------- */
+
+  _renderSymbolTable() {
+    const tbody = this._dom.symbolTableBody;
+    const symbolsState = this._state.get("symbols") || {};
+    const watchlist = new Set(this._state.get("watchlist") || []);
+    const query = (this._dom.symbolSearch.value || "").trim().toLowerCase();
+    const category = this._dom.categoryFilter.value;
+
+    const rows = Config.SYMBOLS.filter((sym) => {
+      if (category !== "all" && sym.category !== category) return false;
+      if (query && !sym.name.toLowerCase().includes(query) && !sym.id.toLowerCase().includes(query)) return false;
+      return true;
+    });
+
+    tbody.innerHTML = "";
+    rows.forEach((sym) => {
+      const row = symbolsState[sym.id];
+      tbody.appendChild(this._buildSymbolRow(sym, row, watchlist.has(sym.id)));
+    });
+
+    this._dom.scannerCountPill.textContent = `${rows.length} symbol${rows.length === 1 ? "" : "s"}`;
+    this._dom.badgeScanner.textContent = String(Config.SYMBOLS.length);
+  }
+
+  _buildSymbolRow(sym, row, isWatched) {
+    const tr = Utils.el("tr", { dataset: { symbolId: sym.id } });
+
+    const starBtn = Utils.el("button", {
+      class: `star-btn${isWatched ? " is-active" : ""}`,
+      "aria-label": isWatched ? "Unwatch symbol" : "Watch symbol",
+      onclick: () => this._toggleWatch(sym.id, !isWatched)
+    }, [this._starIcon()]);
+    tr.appendChild(Utils.el("td", {}, [starBtn]));
+
+    tr.appendChild(Utils.el("td", {}, [Utils.el("div", { class: "cell-symbol" }, [sym.name, Utils.el("span", { class: "cell-muted cell-mono" }, [" " + sym.id])])]));
+    tr.appendChild(Utils.el("td", {}, [Utils.el("span", { class: "category-tag" }, [sym.category])]));
+    tr.appendChild(Utils.el("td", { class: "cell-mono" }, [row ? Utils.formatPrice(row.price) : "—"]));
+    tr.appendChild(Utils.el("td", { class: "cell-mono cell-muted" }, ["—"]));
+    tr.appendChild(Utils.el("td", {}, [this._trendBadge(row && row.trend)]));
+    tr.appendChild(Utils.el("td", { class: "cell-mono cell-muted" }, [row && row.score && row.score.score !== null ? String(row.score.score) : "—"]));
+    tr.appendChild(Utils.el("td", {}, [this._entryBadge(row && row.entry)]));
+    tr.appendChild(Utils.el("td", { class: "cell-muted cell-mono" }, [row ? Utils.formatRelative(row.updatedAt) : "—"]));
+
+    return tr;
+  }
+
+  _updateSymbolRow(symbolId, row) {
+    const tr = this._dom.symbolTableBody.querySelector(`tr[data-symbol-id="${CSS.escape(symbolId)}"]`);
+    if (!tr) return; // filtered out / not currently rendered
+    const cells = tr.children;
+    cells[3].textContent = Utils.formatPrice(row.price);
+    cells[5].innerHTML = ""; cells[5].appendChild(this._trendBadge(row.trend));
+    cells[6].textContent = row.score && row.score.score !== null ? String(row.score.score) : "—";
+    cells[7].innerHTML = ""; cells[7].appendChild(this._entryBadge(row.entry));
+    cells[8].textContent = Utils.formatRelative(row.updatedAt);
+  }
+
+  _trendBadge(trend) {
+    if (!trend || trend.status === "not_implemented") return Utils.el("span", { class: "badge badge-pending" }, ["Pending"]);
+    const map = { bullish: "badge-bull", bearish: "badge-bear", neutral: "badge-neutral" };
+    return Utils.el("span", { class: `badge ${map[trend.direction] || "badge-neutral"}` }, [trend.direction]);
+  }
+
+  _entryBadge(entry) {
+    if (!entry || entry.status === "not_implemented" || !entry.hasSignal) return Utils.el("span", { class: "badge badge-neutral" }, ["No signal"]);
+    return Utils.el("span", { class: "badge badge-bull" }, ["Signal"]);
+  }
+
+  _starIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "currentColor");
+    svg.innerHTML = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
+    return svg;
+  }
+
+  /* ---------- watching / signals / history panels ---------- */
+
+  _renderWatchingPanel() {
+    const watchlist = this._state.get("watchlist") || [];
+    const symbolsState = this._state.get("symbols") || {};
+    const container = this._dom.watchingBody;
+    this._dom.watchingCountPill.textContent = `${watchlist.length} symbol${watchlist.length === 1 ? "" : "s"}`;
+    this._dom.badgeWatching.textContent = String(watchlist.length);
+
+    if (watchlist.length === 0) {
+      container.innerHTML = "";
+      container.appendChild(this._emptyState(
+        this._eyeIcon(),
+        "Nothing watched yet",
+        "Star symbols from the Scanner panel, or pick them in Settings, to track them here."
+      ));
+      return;
+    }
+
+    const table = Utils.el("table", { class: "data-table" }, [
+      Utils.el("thead", {}, [Utils.el("tr", {}, [
+        Utils.el("th", {}, ["Symbol"]), Utils.el("th", {}, ["Category"]), Utils.el("th", {}, ["Price"]), Utils.el("th", {}, ["Trend"]), Utils.el("th", { style: "width:70px" }, [""])
+      ])]),
+      Utils.el("tbody", {}, watchlist.map((symbolId) => {
+        const meta = Config.SYMBOLS.find((s) => s.id === symbolId);
+        const row = symbolsState[symbolId];
+        if (!meta) return null;
+        return Utils.el("tr", {}, [
+          Utils.el("td", {}, [Utils.el("div", { class: "cell-symbol" }, [meta.name])]),
+          Utils.el("td", {}, [Utils.el("span", { class: "category-tag" }, [meta.category])]),
+          Utils.el("td", { class: "cell-mono" }, [row ? Utils.formatPrice(row.price) : "—"]),
+          Utils.el("td", {}, [this._trendBadge(row && row.trend)]),
+          Utils.el("td", {}, [Utils.el("button", { class: "btn btn-sm", onclick: () => this._toggleWatch(symbolId, false) }, ["Remove"])])
+        ]);
+      }).filter(Boolean))
+    ]);
+    container.innerHTML = "";
+    container.appendChild(table);
+  }
+
+  _renderActiveSignals() {
+    const signals = this._state.get("activeSignals") || [];
+    const container = this._dom.signalsBody;
+    this._dom.signalsCountPill.textContent = `${signals.length} active`;
+    this._dom.badgeSignals.textContent = String(signals.length);
+
+    container.innerHTML = "";
+    if (signals.length === 0) {
+      container.appendChild(this._emptyState(
+        this._pulseIcon(),
+        "No active signals",
+        "Once the Entry Engine is implemented, qualifying entries will appear here in real time."
+      ));
+      return;
+    }
+    // Rendering path for future real signals (kept minimal - Entry Engine
+    // is still a placeholder and will define the exact signal shape).
+    const list = Utils.el("ul", {}, signals.map((sig) => Utils.el("li", {}, [JSON.stringify(sig)])));
+    container.appendChild(list);
+  }
+
+  _renderSignalHistory() {
+    const history = this._state.get("signalHistory") || [];
+    const container = this._dom.historyBody;
+    this._dom.historyCountPill.textContent = `${history.length} records`;
+    this._dom.badgeHistory.textContent = String(history.length);
+
+    container.innerHTML = "";
+    if (history.length === 0) {
+      container.appendChild(this._emptyState(
+        this._clockIcon(),
+        "No signal history yet",
+        "Past signals and their outcomes will be logged here once scanning produces results."
+      ));
+      return;
+    }
+    const list = Utils.el("ul", {}, history.map((rec) => Utils.el("li", {}, [JSON.stringify(rec)])));
+    container.appendChild(list);
+  }
+
+  _emptyState(iconSvg, title, desc) {
+    return Utils.el("div", { class: "empty-state" }, [iconSvg, Utils.el("div", { class: "empty-state-title" }, [title]), Utils.el("div", { class: "empty-state-desc" }, [desc])]);
+  }
+
+  _eyeIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.6");
+    svg.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    return svg;
+  }
+  _pulseIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.6");
+    svg.innerHTML = '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>';
+    return svg;
+  }
+  _clockIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.6");
+    svg.innerHTML = '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/>';
+    return svg;
+  }
+
+  /* ---------- clock ---------- */
+
+  _startClock() {
+    const tick = () => { this._dom.headerClock.textContent = Utils.formatTime(new Date()); };
+    tick();
+    window.setInterval(tick, 1000);
+  }
+}
+
+
+/* ============================================================================
+   APP BOOTSTRAP
+   ==========================================================================*/
+const App = (() => {
+  let modules = {};
+
+  function setLoadingProgress(pct, label) {
+    const fill = Utils.qs("#loading-bar-fill");
+    const text = Utils.qs("#loading-status-text");
+    if (fill) fill.style.width = pct + "%";
+    if (text && label) text.textContent = label;
+  }
+
+  async function init() {
+    const steps = [
+      ["Loading configuration…", 10],
+      ["Preparing application state…", 25],
+      ["Loading settings…", 40],
+      ["Wiring analytical modules…", 60],
+      ["Starting data feed…", 80],
+      ["Preparing dashboard…", 95]
+    ];
+    let i = 0;
+    const nextStep = () => {
+      if (i >= steps.length) return;
+      const [label, pct] = steps[i++];
+      setLoadingProgress(pct, label);
+    };
+
+    nextStep(); // config
+    await wait(120);
+
+    const eventBus = new EventBus();
+    const stateManager = new StateManager(eventBus);
+    nextStep(); // state
+    await wait(120);
+
+    const settingsManager = new SettingsManager(eventBus, stateManager);
+    settingsManager.init();
+    nextStep(); // settings
+    await wait(120);
+
+    const dataFeed = new DataFeedManager(eventBus, stateManager);
+    const trendEngine = new TrendEngine(eventBus, stateManager);
+    const scoreCalculator = new TrendScoreCalculator(eventBus, stateManager);
+    const entryEngine = new EntryEngine(eventBus, stateManager);
+    const scannerManager = new ScannerManager({
+      eventBus, stateManager, dataFeed, trendEngine, scoreCalculator, entryEngine, settingsManager
+    });
+    const alertsManager = new AlertsManager(eventBus, stateManager, settingsManager);
+    alertsManager.init();
+    nextStep(); // analytical modules
+    await wait(120);
+
+    // Subscribe the data feed to every symbol currently on the watchlist so
+    // mock ticks start flowing as soon as the connection is established.
+    (stateManager.get("watchlist") || []).forEach((symbolId) => dataFeed.subscribeSymbol(symbolId));
+    stateManager.subscribe("watchlist", ({ value }) => {
+      dataFeed.getSubscribedSymbols().forEach((id) => { if (!value.includes(id)) dataFeed.unsubscribeSymbol(id); });
+      value.forEach((id) => dataFeed.subscribeSymbol(id));
+    });
+    dataFeed.connect();
+    nextStep(); // data feed
+    await wait(150);
+
+    const dashboardUI = new DashboardUI({ eventBus, stateManager, settingsManager, dataFeed, scannerManager, alertsManager });
+    dashboardUI.init();
+    nextStep(); // dashboard
+    await wait(150);
+
+    if (settingsManager.get("autoStartScanner")) scannerManager.start();
+
+    modules = { eventBus, stateManager, settingsManager, dataFeed, trendEngine, scoreCalculator, entryEngine, scannerManager, alertsManager, dashboardUI };
+
+    setLoadingProgress(100, "Ready");
+    await wait(200);
+    revealApp();
+  }
+
+  function wait(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
+
+  function revealApp() {
+    const loadingScreen = Utils.qs("#loading-screen");
+    const app = Utils.qs("#app");
+    app.hidden = false;
+    loadingScreen.classList.add("is-hidden");
+    window.setTimeout(() => { loadingScreen.style.display = "none"; }, 450);
+  }
+
+  return { init, getModules: () => modules };
+})();
+
+document.addEventListener("DOMContentLoaded", () => { App.init(); });
+
+// Exposed for debugging / later-phase console access only - not part of the
+// documented public architecture.
+window.__derivScanner = App;
+</script>
+</body>
+</html>
