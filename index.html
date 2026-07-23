@@ -1,0 +1,3813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Deriv Synthetic Indices Scanner</title>
+<style>
+/* ==========================================================================
+   0. RESET & TOKENS
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+ul, ol { list-style: none; margin: 0; padding: 0; }
+button, input, select { font-family: inherit; font-size: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: inherit; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-1); }
+::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 6px; border: 2px solid var(--bg-1); }
+
+:root{
+  /* Color */
+  --bg-0: #0a0d13;
+  --bg-1: #10141d;
+  --bg-2: #161b26;
+  --bg-3: #1e2430;
+  --bg-3-hover: #262d3d;
+  --border: #232936;
+  --border-light: #333a4a;
+  --text-0: #e6e9ef;
+  --text-1: #a7adba;
+  --text-2: #666e7d;
+  --accent: #00d4ff;
+  --accent-dim: #0891b2;
+  --accent-soft: rgba(0, 212, 255, 0.12);
+  --violet: #8b7cff;
+  --violet-soft: rgba(139, 124, 255, 0.14);
+  --bull: #26a69a;
+  --bull-soft: rgba(38, 166, 154, 0.14);
+  --bear: #ef5350;
+  --bear-soft: rgba(239, 83, 80, 0.14);
+  --warn: #f0b429;
+  --warn-soft: rgba(240, 180, 41, 0.14);
+
+  /* Type */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace;
+
+  /* Layout */
+  --header-h: 52px;
+  --statusbar-h: 28px;
+  --sidebar-w: 208px;
+  --sidebar-w-collapsed: 56px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --transition: 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
+
+/* Light theme palette - swapped in via [data-theme="light"] on <html>.
+   Same variable names/roles as the dark palette above, so every component
+   that already themes off var(--bg-*)/var(--text-*)/etc. re-themes for free. */
+:root[data-theme="light"]{
+  --bg-0: #f4f6f9;
+  --bg-1: #ffffff;
+  --bg-2: #eef1f6;
+  --bg-3: #e3e7ee;
+  --bg-3-hover: #d7dce6;
+  --border: #dde2ea;
+  --border-light: #c7cedb;
+  --text-0: #171a21;
+  --text-1: #565e6e;
+  --text-2: #8891a1;
+  --accent: #0891b2;
+  --accent-dim: #0e7490;
+  --accent-soft: rgba(8, 145, 178, 0.12);
+  --violet: #6d5ce6;
+  --violet-soft: rgba(109, 92, 230, 0.12);
+  --bull: #1f8f7f;
+  --bull-soft: rgba(31, 143, 127, 0.12);
+  --bear: #d9463f;
+  --bear-soft: rgba(217, 70, 63, 0.12);
+  --warn: #b5820a;
+  --warn-soft: rgba(181, 130, 10, 0.14);
+}
+
+/* ==========================================================================
+   1. LOADING SCREEN
+   ========================================================================== */
+.loading-screen {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-0);
+  transition: opacity 400ms ease, visibility 400ms ease;
+}
+.loading-screen.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+.loading-content { display: flex; flex-direction: column; align-items: center; gap: 18px; width: 280px; }
+.loading-logo { position: relative; width: 64px; height: 64px; }
+.loading-logo svg { width: 100%; height: 100%; }
+.loading-logo .sweep {
+  transform-origin: 32px 32px;
+  animation: sweep-rotate 1.6s linear infinite;
+}
+@keyframes sweep-rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.loading-title {
+  font-size: 18px; letter-spacing: 2px; font-weight: 600; color: var(--text-0);
+}
+.loading-title span { color: var(--accent); font-weight: 700; }
+.loading-status {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-2);
+  height: 14px; text-align: center;
+}
+.loading-bar { width: 100%; height: 3px; background: var(--bg-2); border-radius: 2px; overflow: hidden; }
+.loading-bar-fill {
+  height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+  transition: width 220ms ease;
+}
+
+/* ==========================================================================
+   2. APP SHELL
+   ========================================================================== */
+.app { height: 100%; display: flex; flex-direction: column; }
+.app[hidden] { display: none; }
+
+.header {
+  height: var(--header-h); flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; background: var(--bg-1); border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.header-left, .header-right { display: flex; align-items: center; gap: 12px; }
+.header-center { flex: 1; display: flex; justify-content: center; min-width: 0; }
+
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; background: transparent; border: 1px solid transparent;
+  border-radius: var(--radius-sm); color: var(--text-1); transition: background var(--transition), color var(--transition);
+}
+.icon-btn:hover { background: var(--bg-3); color: var(--text-0); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; letter-spacing: 0.3px; white-space: nowrap; }
+.brand-mark {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 8px var(--accent);
+}
+.brand-accent { color: var(--accent); }
+
+.market-status {
+  display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-1);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.market-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--bull); flex: 0 0 auto; }
+
+.connection-indicator {
+  display: flex; align-items: center; gap: 7px; padding: 5px 10px;
+  border-radius: 999px; background: var(--bg-2); border: 1px solid var(--border);
+  font-size: 11.5px; white-space: nowrap;
+}
+.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-2); position: relative; }
+.connection-indicator[data-status="connecting"] .conn-dot { background: var(--warn); animation: pulse 1s ease-in-out infinite; }
+.connection-indicator[data-status="connected"] .conn-dot { background: var(--bull); box-shadow: 0 0 6px var(--bull); }
+.connection-indicator[data-status="error"] .conn-dot,
+.connection-indicator[data-status="disconnected"] .conn-dot { background: var(--bear); }
+.connection-indicator[data-status="idle"] .conn-dot { background: var(--text-2); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+.conn-label { color: var(--text-1); }
+
+.header-clock { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); white-space: nowrap; }
+
+/* ==========================================================================
+   3. BODY LAYOUT: SIDEBAR + MAIN + SETTINGS DRAWER
+   ========================================================================== */
+.body-layout { flex: 1; display: flex; min-height: 0; position: relative; }
+
+.sidebar {
+  flex: 0 0 auto; width: var(--sidebar-w);
+  background: var(--bg-1); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; padding: 10px 8px;
+  transition: width var(--transition);
+  overflow-x: hidden; white-space: nowrap;
+}
+.sidebar.is-collapsed { width: var(--sidebar-w-collapsed); }
+.nav-section-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-2);
+  padding: 10px 10px 6px;
+}
+.sidebar.is-collapsed .nav-section-label { opacity: 0; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 10px; background: transparent; border: none; border-radius: var(--radius-sm);
+  color: var(--text-1); font-size: 12.5px; text-align: left; margin-bottom: 2px;
+  transition: background var(--transition), color var(--transition);
+}
+.nav-item svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.nav-item:hover { background: var(--bg-3); color: var(--text-0); }
+.nav-item.is-active { background: var(--accent-soft); color: var(--accent); }
+.nav-item .nav-badge {
+  margin-left: auto; font-family: var(--font-mono); font-size: 10px; padding: 1px 6px;
+  border-radius: 999px; background: var(--bg-3); color: var(--text-1);
+}
+.nav-item.is-active .nav-badge { background: rgba(0,212,255,0.18); color: var(--accent); }
+.sidebar.is-collapsed .nav-label, .sidebar.is-collapsed .nav-badge { display: none; }
+.nav-spacer { flex: 1; }
+.sidebar-footer { padding: 8px 10px; font-size: 10px; color: var(--text-2); font-family: var(--font-mono); }
+.sidebar.is-collapsed .sidebar-footer { display: none; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-0); }
+
+.panel { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 14px; overflow: hidden; }
+.panel[hidden] { display: none; }
+
+.panel-toolbar {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.panel-title { font-size: 14px; font-weight: 600; color: var(--text-0); margin-right: auto; display: flex; align-items: center; gap: 8px; }
+.panel-title .count-pill {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-1); background: var(--bg-2);
+  border: 1px solid var(--border); padding: 1px 7px; border-radius: 999px;
+}
+
+.input, .select {
+  background: var(--bg-2); border: 1px solid var(--border); color: var(--text-0);
+  border-radius: var(--radius-sm); padding: 6px 10px; outline: none; transition: border-color var(--transition);
+}
+.input:focus, .select:focus { border-color: var(--accent-dim); }
+.input::placeholder { color: var(--text-2); }
+.search-input { width: 220px; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  background: var(--bg-2); border: 1px solid var(--border); color: var(--text-1);
+  border-radius: var(--radius-sm); font-size: 12px; font-weight: 500;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.btn:hover { background: var(--bg-3); color: var(--text-0); }
+.btn-primary { background: var(--accent-soft); border-color: rgba(0,212,255,0.35); color: var(--accent); }
+.btn-primary:hover { background: rgba(0,212,255,0.2); }
+.btn-danger { color: var(--bear); }
+.btn-sm { padding: 4px 9px; font-size: 11px; }
+.btn svg { width: 13px; height: 13px; }
+
+/* Panel body / table */
+.panel-body { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-1); }
+
+table.data-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.data-table thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg-2); color: var(--text-2); text-align: left; font-weight: 600;
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px;
+  padding: 9px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.data-table tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-0); white-space: nowrap; }
+.data-table tbody tr:hover { background: var(--bg-2); }
+.data-table tbody tr:last-child td { border-bottom: none; }
+
+/* Momentary highlight applied to a row when its symbol produces a triggered
+   entry signal (see AlertsManager's "alerts:row-highlight" event). */
+@keyframes row-signal-flash {
+  0% { background-color: rgba(38, 166, 154, 0.38); }
+  100% { background-color: transparent; }
+}
+.data-table tbody tr.row-signal-flash td { animation: row-signal-flash 2.4s ease-out; }
+.cell-mono { font-family: var(--font-mono); }
+.cell-muted { color: var(--text-2); }
+.cell-symbol { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.category-tag {
+  font-size: 10px; padding: 2px 7px; border-radius: 999px; background: var(--bg-3); color: var(--text-1);
+  font-family: var(--font-mono); letter-spacing: 0.3px;
+}
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 500; }
+.badge-neutral { background: var(--bg-3); color: var(--text-2); }
+.badge-bull { background: var(--bull-soft); color: var(--bull); }
+.badge-bear { background: var(--bear-soft); color: var(--bear); }
+.badge-pending { background: var(--violet-soft); color: var(--violet); }
+.badge-warn { background: var(--warn-soft); color: var(--warn); }
+
+.star-btn {
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: none; color: var(--text-2); border-radius: var(--radius-sm);
+  transition: color var(--transition);
+}
+.star-btn:hover { color: var(--warn); }
+.star-btn.is-active { color: var(--warn); }
+.star-btn svg { width: 14px; height: 14px; }
+
+.empty-state {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 40px 20px; color: var(--text-2); text-align: center;
+}
+.empty-state svg { width: 40px; height: 40px; opacity: 0.5; }
+.empty-state-title { font-size: 13px; color: var(--text-1); font-weight: 600; }
+.empty-state-desc { font-size: 12px; max-width: 320px; line-height: 1.5; }
+
+/* ==========================================================================
+   4. SETTINGS DRAWER
+   ========================================================================== */
+.settings-overlay {
+  position: fixed; inset: 0; background: rgba(5,7,11,0.55); z-index: 40;
+  opacity: 0; visibility: hidden; transition: opacity var(--transition), visibility var(--transition);
+}
+.settings-overlay.is-open { opacity: 1; visibility: visible; }
+
+.settings-drawer {
+  position: fixed; top: 0; right: 0; height: 100%; width: 360px; max-width: 92vw;
+  background: var(--bg-1); border-left: 1px solid var(--border); z-index: 41;
+  display: flex; flex-direction: column;
+  transform: translateX(100%); transition: transform 220ms ease;
+  box-shadow: -8px 0 24px rgba(0,0,0,0.35);
+}
+.settings-drawer.is-open { transform: translateX(0); }
+.settings-drawer[hidden] { display: none; }
+
+.drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.drawer-header h2 { font-size: 14px; margin: 0; font-weight: 600; }
+.drawer-body { flex: 1; overflow-y: auto; padding: 4px 16px 16px; }
+.drawer-footer { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+.settings-section { padding: 16px 0; border-bottom: 1px solid var(--border); }
+.settings-section:last-child { border-bottom: none; }
+.settings-section h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-2);
+  margin: 0 0 12px;
+}
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
+.field-label { font-size: 12.5px; color: var(--text-0); }
+.field-hint { font-size: 11px; color: var(--text-2); margin-top: 2px; }
+.field-control-full { width: 100%; padding: 7px 0; }
+
+.switch { position: relative; display: inline-block; width: 36px; height: 20px; flex: 0 0 auto; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch-track {
+  position: absolute; inset: 0; background: var(--bg-3); border-radius: 999px; transition: background var(--transition);
+}
+.switch-track::before {
+  content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; border-radius: 50%;
+  background: var(--text-1); transition: transform var(--transition), background var(--transition);
+}
+.switch input:checked + .switch-track { background: var(--accent-soft); }
+.switch input:checked + .switch-track::before { transform: translateX(16px); background: var(--accent); }
+
+.checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.checkbox-item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-1); }
+.checkbox-item input { accent-color: var(--accent); }
+.watchlist-quick-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+/* ==========================================================================
+   5. STATUS BAR
+   ========================================================================== */
+.status-bar {
+  height: var(--statusbar-h); flex: 0 0 auto; background: var(--bg-1); border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 14px;
+  font-size: 11px; color: var(--text-2); font-family: var(--font-mono);
+}
+.status-bar-group { display: flex; align-items: center; gap: 16px; }
+.status-item { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.status-item .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-2); }
+.status-item.is-live .status-dot { background: var(--bull); }
+.status-item.is-warn .status-dot { background: var(--warn); }
+
+/* ==========================================================================
+   6. TOASTS
+   ========================================================================== */
+.toast-container {
+  position: fixed; bottom: 40px; right: 14px; z-index: 60;
+  display: flex; flex-direction: column; gap: 8px; width: 300px; max-width: 90vw;
+}
+.toast {
+  background: var(--bg-2); border: 1px solid var(--border-light); border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px; color: var(--text-0);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+  animation: toast-in 200ms ease;
+}
+.toast.toast-success { border-left-color: var(--bull); }
+.toast.toast-error { border-left-color: var(--bear); }
+.toast.toast-warn { border-left-color: var(--warn); }
+.toast-title { font-weight: 600; margin-bottom: 2px; }
+.toast-desc { color: var(--text-2); font-size: 11.5px; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ==========================================================================
+   7. RESPONSIVE
+   ========================================================================== */
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed; top: var(--header-h); left: 0; bottom: var(--statusbar-h);
+    z-index: 30; width: var(--sidebar-w); transform: translateX(-100%);
+    transition: transform var(--transition);
+  }
+  .sidebar.is-mobile-open { transform: translateX(0); box-shadow: 8px 0 24px rgba(0,0,0,0.4); }
+  .sidebar.is-collapsed { width: var(--sidebar-w); }
+  .header-center { display: none; }
+  .search-input { width: 140px; }
+}
+@media (max-width: 560px) {
+  .header-clock { display: none; }
+  .conn-label { display: none; }
+  .panel-title { font-size: 13px; }
+}
+
+/* Visible keyboard focus */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+</style>
+</head>
+<body>
+
+<!-- ==========================================================================
+     LOADING SCREEN
+     ========================================================================== -->
+<div id="loading-screen" class="loading-screen">
+  <div class="loading-content">
+    <div class="loading-logo">
+      <svg viewBox="0 0 64 64" fill="none">
+        <circle cx="32" cy="32" r="30" stroke="#232936" stroke-width="2"/>
+        <circle cx="32" cy="32" r="20" stroke="#232936" stroke-width="1"/>
+        <circle cx="32" cy="32" r="10" stroke="#232936" stroke-width="1"/>
+        <g class="sweep">
+          <path d="M32 32 L32 2 A30 30 0 0 1 58 17 Z" fill="#00d4ff" fill-opacity="0.18"/>
+          <line x1="32" y1="32" x2="32" y2="2" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+        </g>
+        <circle cx="32" cy="32" r="3" fill="#00d4ff"/>
+      </svg>
+    </div>
+    <div class="loading-title">DERIV<span>SCANNER</span></div>
+    <div class="loading-status" id="loading-status-text">Initializing…</div>
+    <div class="loading-bar"><div class="loading-bar-fill" id="loading-bar-fill"></div></div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     APP SHELL
+     ========================================================================== -->
+<div id="app" class="app" hidden>
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <button id="sidebar-toggle" class="icon-btn" aria-label="Toggle sidebar" title="Toggle sidebar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <div class="brand"><span class="brand-mark"></span>Deriv<span class="brand-accent">Scanner</span></div>
+    </div>
+    <div class="header-center">
+      <div class="market-status" id="market-status"><span class="dot"></span><span>Synthetic Indices &middot; 24/7 Market</span></div>
+    </div>
+    <div class="header-right">
+      <div class="connection-indicator" id="connection-indicator" data-status="idle">
+        <span class="conn-dot"></span>
+        <span class="conn-label" id="conn-label">Disconnected</span>
+      </div>
+      <div class="header-clock" id="header-clock">--:--:--</div>
+      <button id="settings-toggle" class="icon-btn" aria-label="Open settings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="body-layout">
+
+    <!-- SIDEBAR -->
+    <nav class="sidebar" id="sidebar">
+      <div class="nav-section-label">Workspace</div>
+      <button class="nav-item is-active" data-panel="scanner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span class="nav-label">Scanner</span>
+        <span class="nav-badge" id="badge-scanner">0</span>
+      </button>
+      <button class="nav-item" data-panel="watching">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span class="nav-label">Watching</span>
+        <span class="nav-badge" id="badge-watching">0</span>
+      </button>
+      <button class="nav-item" data-panel="signals">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span class="nav-label">Active Signals</span>
+        <span class="nav-badge" id="badge-signals">0</span>
+      </button>
+      <button class="nav-item" data-panel="history">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
+        <span class="nav-label">Signal History</span>
+        <span class="nav-badge" id="badge-history">0</span>
+      </button>
+      <div class="nav-spacer"></div>
+      <div class="nav-section-label">System</div>
+      <button class="nav-item" data-action="open-settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span class="nav-label">Settings</span>
+      </button>
+      <div class="sidebar-footer">v0.1.0-skeleton</div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="main" id="main">
+
+      <!-- Symbol Table / Scanner Panel -->
+      <section class="panel" id="panel-scanner" data-panel="scanner">
+        <div class="panel-toolbar">
+          <div class="panel-title">Symbol Scanner <span class="count-pill" id="scanner-count-pill">0 symbols</span></div>
+          <select class="select" id="category-filter">
+            <option value="all">All categories</option>
+          </select>
+          <input class="input search-input" id="symbol-search" type="text" placeholder="Search symbol…">
+          <button class="btn" id="scanner-toggle-btn" data-state="stopped">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span id="scanner-toggle-label">Start Scanner</span>
+          </button>
+        </div>
+        <div class="panel-body">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width:30px"></th>
+                <th>Symbol</th>
+                <th>Category</th>
+                <th>Price</th>
+                <th>Change</th>
+                <th>Trend</th>
+                <th>Score</th>
+                <th>Entry Signal</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="symbol-table-body">
+              <!-- rows injected by DashboardUI -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Watching Panel -->
+      <section class="panel" id="panel-watching" data-panel="watching" hidden>
+        <div class="panel-toolbar">
+          <div class="panel-title">Watching <span class="count-pill" id="watching-count-pill">0 symbols</span></div>
+        </div>
+        <div class="panel-body" id="watching-panel-body">
+          <!-- empty state or list injected by DashboardUI -->
+        </div>
+      </section>
+
+      <!-- Active Signals Panel -->
+      <section class="panel" id="panel-signals" data-panel="signals" hidden>
+        <div class="panel-toolbar">
+          <div class="panel-title">Active Signals <span class="count-pill" id="signals-count-pill">0 active</span></div>
+        </div>
+        <div class="panel-body" id="signals-panel-body">
+          <!-- empty state or list injected by DashboardUI -->
+        </div>
+      </section>
+
+      <!-- Signal History Panel -->
+      <section class="panel" id="panel-history" data-panel="history" hidden>
+        <div class="panel-toolbar">
+          <div class="panel-title">Signal History <span class="count-pill" id="history-count-pill">0 records</span></div>
+          <button class="btn btn-sm" id="history-clear-btn">Clear history</button>
+        </div>
+        <div class="panel-body" id="history-panel-body">
+          <!-- empty state or list injected by DashboardUI -->
+        </div>
+      </section>
+
+    </main>
+
+    <!-- SETTINGS DRAWER -->
+    <div class="settings-overlay" id="settings-overlay"></div>
+    <aside class="settings-drawer" id="settings-drawer" hidden aria-label="Settings">
+      <div class="drawer-header">
+        <h2>Settings</h2>
+        <button class="icon-btn" id="settings-close-btn" aria-label="Close settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="drawer-body" id="settings-drawer-body">
+
+        <div class="settings-section">
+          <h3>Scanner</h3>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Scan interval</div>
+              <div class="field-hint">How often the scanner cycle runs</div>
+            </div>
+            <select class="select" id="setting-scan-interval">
+              <option value="1000">1s</option>
+              <option value="2000">2s</option>
+              <option value="5000">5s</option>
+              <option value="10000">10s</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Auto-start scanner</div>
+              <div class="field-hint">Start scanning automatically on load</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="setting-auto-start">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Strategy</h3>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Trend timeframe</div>
+              <div class="field-hint">Bias timeframe - determines direction only (BUY-only / SELL-only / ignore)</div>
+            </div>
+            <select class="select" id="setting-trend-timeframe">
+              <option value="15m">15m</option>
+              <option value="30m">30m</option>
+              <option value="1h">1h</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Entry timeframe</div>
+              <div class="field-hint">Lower timeframe the no-wick pattern + retest is detected on</div>
+            </div>
+            <select class="select" id="setting-entry-timeframe">
+              <option value="15m">15m</option>
+              <option value="30m">30m</option>
+              <option value="1h">1h</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Wick tolerance mode</div>
+              <div class="field-hint">Measure wick against the candle's range or its body</div>
+            </div>
+            <select class="select" id="setting-wick-tolerance-mode">
+              <option value="range">% of range (default)</option>
+              <option value="body">% of body</option>
+            </select>
+          </div>
+          <div class="field-row" id="field-row-wick-tolerance-range">
+            <div>
+              <div class="field-label">Wick tolerance</div>
+              <div class="field-hint">Max wick allowed on a "no-wick" candle, as % of range</div>
+            </div>
+            <select class="select" id="setting-wick-tolerance">
+              <option value="1">1% (strict)</option>
+              <option value="2">2%</option>
+              <option value="3">3% (default)</option>
+              <option value="5">5%</option>
+              <option value="8">8% (loose)</option>
+            </select>
+          </div>
+          <div class="field-row" id="field-row-wick-tolerance-body" hidden>
+            <div>
+              <div class="field-label">Wick tolerance (body)</div>
+              <div class="field-hint">Max wick allowed on a "no-wick" candle, as % of body size</div>
+            </div>
+            <select class="select" id="setting-wick-tolerance-body">
+              <option value="5">5% (strict)</option>
+              <option value="10">10%</option>
+              <option value="15">15% (default)</option>
+              <option value="25">25%</option>
+              <option value="40">40% (loose)</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Countdown length</div>
+              <div class="field-hint">Candles a Watching setup stays alive for before expiring</div>
+            </div>
+            <select class="select" id="setting-countdown-length">
+              <option value="5">5 candles</option>
+              <option value="10">10 candles (default)</option>
+              <option value="15">15 candles</option>
+              <option value="20">20 candles</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Watchlist symbols</h3>
+          <div class="field-hint" style="margin-bottom:8px;">Select one, multiple, or all volatility indices to stream live candle data for.</div>
+          <div class="watchlist-quick-actions" id="watchlist-quick-actions">
+            <button type="button" class="btn btn-sm" id="watchlist-select-volatility">All Volatility</button>
+            <button type="button" class="btn btn-sm" id="watchlist-select-all">All Symbols</button>
+            <button type="button" class="btn btn-sm" id="watchlist-clear">Clear</button>
+          </div>
+          <div class="field-control-full">
+            <div class="checkbox-grid" id="settings-symbol-checkboxes"><!-- injected --></div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Candle timeframes</h3>
+          <div class="field-hint" style="margin-bottom:8px;">Timeframes streamed for every watched symbol.</div>
+          <div class="checkbox-grid" id="settings-timeframe-checkboxes"><!-- injected --></div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Alerts</h3>
+          <div class="field-row">
+            <div class="field-label">Sound on new signal</div>
+            <label class="switch">
+              <input type="checkbox" id="setting-alert-sound">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Notification sound</div>
+              <div class="field-hint">Tone played when a signal fires</div>
+            </div>
+            <select class="select" id="setting-notification-sound">
+              <option value="chime">Chime</option>
+              <option value="ping">Soft ping</option>
+              <option value="alarm">Alarm</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div class="field-label">Desktop notifications</div>
+            <label class="switch">
+              <input type="checkbox" id="setting-alert-desktop">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="field-row">
+            <div class="field-label">Toast notifications</div>
+            <label class="switch">
+              <input type="checkbox" id="setting-alert-toast">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Display</h3>
+          <div class="field-row">
+            <div class="field-label">Compact table rows</div>
+            <label class="switch">
+              <input type="checkbox" id="setting-compact-rows">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Theme</div>
+              <div class="field-hint">Dashboard color scheme</div>
+            </div>
+            <select class="select" id="setting-theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Data feed</h3>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Feed source</div>
+              <div class="field-hint">Live candle data streamed from the Deriv WebSocket API</div>
+            </div>
+            <select class="select" id="setting-feed-mode">
+              <option value="live">Live (Deriv WebSocket)</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <div>
+              <div class="field-label">Auto reconnect</div>
+              <div class="field-hint">Automatically reconnect after a dropped connection</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="setting-auto-reconnect">
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </div>
+
+      </div>
+      <div class="drawer-footer">
+        <button class="btn" id="settings-reset-btn">Reset defaults</button>
+        <button class="btn btn-primary" id="settings-save-btn">Save changes</button>
+      </div>
+    </aside>
+
+  </div>
+
+  <!-- STATUS BAR -->
+  <footer class="status-bar" id="status-bar">
+    <div class="status-bar-group">
+      <div class="status-item" id="status-feed"><span class="status-dot"></span><span id="status-feed-text">Feed: disconnected</span></div>
+      <div class="status-item" id="status-scanner"><span class="status-dot"></span><span id="status-scanner-text">Scanner: idle</span></div>
+      <div class="status-item"><span id="status-scanned-text">Scanned: 0/0</span></div>
+    </div>
+    <div class="status-bar-group">
+      <div class="status-item"><span id="status-latency-text">Latency: -- ms</span></div>
+      <div class="status-item"><span id="status-lastupdate-text">Last update: --</span></div>
+      <div class="status-item"><span>Deriv Synthetic Indices Scanner v0.1.0</span></div>
+    </div>
+  </footer>
+
+</div>
+
+<!-- TOASTS -->
+<div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+
+<script>
+"use strict";
+/* ============================================================================
+   DERIV SYNTHETIC INDICES SCANNER
+   ----------------------------------------------------------------------------
+   Architecture-only skeleton. Every analytical module (TrendEngine,
+   TrendScoreCalculator, EntryEngine) is a placeholder: it returns a well
+   defined "not implemented" shape so the UI and orchestration layer can be
+   fully built and exercised before any real trading logic exists.
+
+   Module map:
+     Utils               - stateless helpers
+     EventBus             - pub/sub backbone used by every module
+     Config                - static reference data & defaults
+     StateManager           - single source of truth + subscriptions
+     DataFeedManager          - connection lifecycle + tick plumbing (mocked)
+     TrendEngine                - PLACEHOLDER: trend detection
+     TrendScoreCalculator         - PLACEHOLDER: trend scoring
+     EntryEngine                    - PLACEHOLDER: entry signal evaluation
+     ScannerManager                   - orchestrates the pipeline above
+     AlertsManager                      - toast/sound/notification delivery
+     SettingsManager                      - persisted user settings
+     DashboardUI                            - renders + wires the DOM
+     App                                      - bootstrap / init sequence
+   ==========================================================================*/
+
+
+/* ============================================================================
+   UTILS
+   ==========================================================================*/
+const Utils = (() => {
+  function qs(selector, scope) { return (scope || document).querySelector(selector); }
+  function qsa(selector, scope) { return Array.from((scope || document).querySelectorAll(selector)); }
+
+  function el(tag, attrs, children) {
+    const node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach((key) => {
+        if (key === "class") node.className = attrs[key];
+        else if (key === "dataset") Object.assign(node.dataset, attrs[key]);
+        else if (key.startsWith("on") && typeof attrs[key] === "function") node.addEventListener(key.slice(2), attrs[key]);
+        else node.setAttribute(key, attrs[key]);
+      });
+    }
+    (children || []).forEach((child) => {
+      if (child === null || child === undefined) return;
+      node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+    });
+    return node;
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
+
+  function formatTime(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(d.getTime())) return "--:--:--";
+    return d.toLocaleTimeString(undefined, { hour12: false });
+  }
+
+  function formatRelative(date) {
+    if (!date) return "--";
+    const diffMs = Date.now() - (date instanceof Date ? date.getTime() : date);
+    const s = Math.max(0, Math.round(diffMs / 1000));
+    if (s < 1) return "just now";
+    if (s < 60) return s + "s ago";
+    const m = Math.round(s / 60);
+    if (m < 60) return m + "m ago";
+    const h = Math.round(m / 60);
+    return h + "h ago";
+  }
+
+  function formatPrice(value, decimals) {
+    if (value === null || value === undefined || Number.isNaN(value)) return "—";
+    return Number(value).toFixed(decimals === undefined ? 3 : decimals);
+  }
+
+  function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+
+  // Writes textContent only when it actually changed - avoids triggering a
+  // layout/paint on every scan cycle for values that happened not to move.
+  function setText(el, text) {
+    if (!el) return;
+    if (el.textContent !== text) el.textContent = text;
+  }
+
+  function debounce(fn, wait) {
+    let timer = null;
+    return function debounced(...args) {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn.apply(this, args), wait);
+    };
+  }
+
+  function uid(prefix) {
+    return (prefix || "id") + "_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  }
+
+  // Shallow-per-key, recursive-into-plain-objects merge: arrays and
+  // primitives from `source` replace the base value outright (so e.g. a
+  // watchlist array is swapped, not concatenated), but a plain object like
+  // settings.alerts/settings.display is merged key-by-key so a partial
+  // update (or an older persisted payload missing a newer sub-key) can
+  // never silently wipe out the rest of that nested object.
+  function isPlainObject(v) { return v !== null && typeof v === "object" && !Array.isArray(v); }
+  function deepMerge(base, source) {
+    const out = Object.assign({}, base);
+    Object.keys(source || {}).forEach((key) => {
+      const b = out[key], s = source[key];
+      out[key] = (isPlainObject(b) && isPlainObject(s)) ? deepMerge(b, s) : s;
+    });
+    return out;
+  }
+
+  function getPath(obj, path) {
+    return path.split(".").reduce((acc, key) => (acc === undefined || acc === null ? undefined : acc[key]), obj);
+  }
+
+  function setPath(obj, path, value) {
+    const keys = path.split(".");
+    let cursor = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      const key = keys[i];
+      if (typeof cursor[key] !== "object" || cursor[key] === null) cursor[key] = {};
+      cursor = cursor[key];
+    }
+    cursor[keys[keys.length - 1]] = value;
+    return obj;
+  }
+
+  return { qs, qsa, el, escapeHtml, formatTime, formatRelative, formatPrice, clamp, debounce, uid, getPath, setPath, setText, deepMerge };
+})();
+
+
+/* ============================================================================
+   EVENT BUS
+   ==========================================================================*/
+class EventBus {
+  constructor() {
+    this._listeners = new Map();
+  }
+  on(eventName, handler) {
+    if (!this._listeners.has(eventName)) this._listeners.set(eventName, new Set());
+    this._listeners.get(eventName).add(handler);
+    return () => this.off(eventName, handler);
+  }
+  once(eventName, handler) {
+    const off = this.on(eventName, (...args) => { off(); handler(...args); });
+    return off;
+  }
+  off(eventName, handler) {
+    if (this._listeners.has(eventName)) this._listeners.get(eventName).delete(handler);
+  }
+  emit(eventName, payload) {
+    if (!this._listeners.has(eventName)) return;
+    this._listeners.get(eventName).forEach((handler) => {
+      try { handler(payload); }
+      catch (err) { console.error(`[EventBus] handler for "${eventName}" threw:`, err); }
+    });
+  }
+}
+
+/* Events reference (documented centrally so later phases know what to hook into):
+   datafeed:status        {status, message}
+   datafeed:tick          {symbolId, price, timestamp}
+   datafeed:error         {message}
+   scanner:status         {status}
+   scanner:cycle-start     {}
+   scanner:cycle-complete    {scannedCount, totalCount, durationMs}
+   scanner:symbol-updated      {symbolId, row}
+   signals:new                   {signal}
+   signals:cleared                  {}
+   alerts:row-highlight                {symbolId}
+   settings:changed                   {settings}
+   state:change                         {path, value}
+   state:change:<path>                    {value}
+   ui:panel-changed                         {panel}
+   alerts:toast                               {type, title, message}
+*/
+
+
+/* ============================================================================
+   CONFIG
+   ==========================================================================*/
+const Config = (() => {
+  // Reference symbol catalogue for Deriv synthetic indices. IDs are placeholders
+  // aligned to Deriv's public symbol naming convention; verify against the live
+  // Deriv API symbol list when the real Data Feed integration is implemented.
+  const SYMBOLS = [
+    { id: "R_10", name: "Volatility 10 Index", category: "Volatility" },
+    { id: "R_25", name: "Volatility 25 Index", category: "Volatility" },
+    { id: "R_50", name: "Volatility 50 Index", category: "Volatility" },
+    { id: "R_75", name: "Volatility 75 Index", category: "Volatility" },
+    { id: "R_100", name: "Volatility 100 Index", category: "Volatility" },
+    { id: "1HZ10V", name: "Volatility 10 (1s) Index", category: "Volatility (1s)" },
+    { id: "1HZ25V", name: "Volatility 25 (1s) Index", category: "Volatility (1s)" },
+    { id: "1HZ50V", name: "Volatility 50 (1s) Index", category: "Volatility (1s)" },
+    { id: "1HZ75V", name: "Volatility 75 (1s) Index", category: "Volatility (1s)" },
+    { id: "1HZ100V", name: "Volatility 100 (1s) Index", category: "Volatility (1s)" },
+    { id: "BOOM300N", name: "Boom 300 Index", category: "Boom" },
+    { id: "BOOM500", name: "Boom 500 Index", category: "Boom" },
+    { id: "BOOM1000", name: "Boom 1000 Index", category: "Boom" },
+    { id: "CRASH300N", name: "Crash 300 Index", category: "Crash" },
+    { id: "CRASH500", name: "Crash 500 Index", category: "Crash" },
+    { id: "CRASH1000", name: "Crash 1000 Index", category: "Crash" },
+    { id: "JD10", name: "Jump 10 Index", category: "Jump" },
+    { id: "JD25", name: "Jump 25 Index", category: "Jump" },
+    { id: "JD50", name: "Jump 50 Index", category: "Jump" },
+    { id: "JD75", name: "Jump 75 Index", category: "Jump" },
+    { id: "JD100", name: "Jump 100 Index", category: "Jump" },
+    { id: "STPRNG", name: "Step Index", category: "Step" }
+  ];
+
+  const CATEGORIES = Array.from(new Set(SYMBOLS.map((s) => s.category)));
+
+  // Symbol IDs belonging to the "volatility index" family (both the classic
+  // and 1s variants) - used to power "select all volatility indices" actions
+  // without hard-coding the list a second time.
+  const VOLATILITY_SYMBOLS = SYMBOLS
+    .filter((s) => s.category.indexOf("Volatility") === 0)
+    .map((s) => s.id);
+
+  // Candle intervals the Data Feed Manager streams. `granularity` is in
+  // seconds, matching the Deriv WebSocket API's `ticks_history` parameter.
+  const TIMEFRAMES = [
+    { id: "15m", label: "15 Minutes", granularity: 900 },
+    { id: "30m", label: "30 Minutes", granularity: 1800 },
+    { id: "1h", label: "1 Hour", granularity: 3600 }
+  ];
+
+  // Deriv's public demo app_id, suitable for unauthenticated market-data
+  // access (candles/ticks). Swap for a dedicated app_id (register at
+  // https://api.deriv.com) before shipping to production traffic. Only used
+  // on the LEGACY endpoint below - the new public endpoint takes no app_id.
+  const DERIV_APP_ID = 1089;
+
+  // ---------------------------------------------------------------------
+  // Deriv retired the old "Binary-era" WebSocket API in favor of a new
+  // Options Trading API (see https://developers.deriv.com/docs/options/websocket/
+  // and https://developers.deriv.com/comparison/). Unauthenticated market
+  // data (ticks_history/candles - everything this scanner needs) is now
+  // served from a dedicated public endpoint that takes no app_id/token:
+  //
+  //   wss://api.derivws.com/trading/v1/options/ws/public
+  //
+  // The old endpoint (wss://ws.derivws.com/websockets/v3?app_id=...) is now
+  // documented as "legacy". It still answers requests today, so it's kept
+  // here as an automatic fallback (see DataFeedManager._openSocket /
+  // _handleClose) in case the new public endpoint ever rejects connections
+  // from a browser client (e.g. if it turns out to require an app_id/header
+  // that a raw `new WebSocket(...)` can't attach) or is pulled without
+  // notice - the app will detect that and drop back to legacy automatically
+  // rather than going dark.
+  // ---------------------------------------------------------------------
+  const DERIV_WS_URL_NEW = `wss://api.derivws.com/trading/v1/options/ws/public`;
+  const DERIV_WS_URL_LEGACY = `wss://ws.derivws.com/websockets/v3?app_id=${DERIV_APP_ID}`;
+
+  const DEFAULT_SETTINGS = {
+    scanIntervalMs: 2000,
+    autoStartScanner: false,
+    watchlist: ["R_10", "R_25", "R_100"],
+    timeframes: ["15m", "30m", "1h"],
+    // Trend bias and entry pattern/retest detection are deliberately
+    // resolved on different timeframes by default - trend runs on the
+    // higher timeframe (direction only), entry runs on the lower timeframe
+    // (no-wick + retest). See ScannerManager._tick / EntryEngine.evaluate.
+    trendTimeframe: "1h",
+    entryTimeframe: "15m",
+    wickTolerancePercent: 3,
+    // "range" = wick allowed as % of candle's high-low range (legacy/default).
+    // "body"  = wick allowed as % of candle's body size - scales with move
+    // strength rather than candle width. See EntryEngine._passesWickCheck.
+    wickToleranceMode: "range",
+    wickToleranceBodyPercent: 15,
+    countdownLength: 10,
+    alerts: { sound: true, desktop: false, toast: true },
+    notificationSound: "chime",
+    display: { compactRows: false },
+    theme: "dark",
+    feedMode: "live",
+    autoReconnect: true
+  };
+
+  const STORAGE_KEY = "deriv-scanner:settings:v1";
+
+  // Precomputed lookup structures - built once here instead of being
+  // rebuilt (via .map()) or linearly rescanned (via .find()/.some()) by
+  // every module that needs a symbol/timeframe lookup, on every call.
+  // SYMBOLS/TIMEFRAMES stay the source of truth and the only place that
+  // ever changes them; these derived maps are read-only from here on.
+  const SYMBOL_MAP = new Map(SYMBOLS.map((s) => [s.id, s]));
+  const SYMBOL_ID_SET = new Set(SYMBOLS.map((s) => s.id));
+  const TIMEFRAME_MAP = new Map(TIMEFRAMES.map((t) => [t.id, t]));
+  const TIMEFRAME_IDS = TIMEFRAMES.map((t) => t.id);
+
+  return {
+    SYMBOLS, CATEGORIES, VOLATILITY_SYMBOLS, TIMEFRAMES, DERIV_APP_ID, DERIV_WS_URL_NEW, DERIV_WS_URL_LEGACY, DEFAULT_SETTINGS, STORAGE_KEY,
+    SYMBOL_MAP, SYMBOL_ID_SET, TIMEFRAME_MAP, TIMEFRAME_IDS
+  };
+})();
+
+
+/* ============================================================================
+   STATE MANAGER
+   ----------------------------------------------------------------------------
+   Single source of truth for the app. Other modules read/write through here
+   and subscribe to path-based changes instead of talking to each other
+   directly, which keeps the module graph loosely coupled.
+   ==========================================================================*/
+class StateManager {
+  constructor(eventBus) {
+    this._bus = eventBus;
+    this._state = {
+      connection: { status: "idle", latency: null, lastMessageAt: null },
+      scanner: { status: "idle", lastCycleAt: null, scannedCount: 0, totalCount: 0 },
+      symbols: {},        // symbolId -> row data (price/trend/score/entry placeholders)
+      watchlist: [],       // array of symbolIds
+      activeSignals: [],    // array of signal objects (empty until Entry Engine phase)
+      signalHistory: [],     // array of historical signal records
+      settings: {},            // populated by SettingsManager
+      ui: { activePanel: "scanner", sidebarCollapsed: false, settingsOpen: false }
+    };
+  }
+
+  getState() { return this._state; }
+
+  get(path) {
+    if (!path) return this._state;
+    return Utils.getPath(this._state, path);
+  }
+
+  set(path, value) {
+    Utils.setPath(this._state, path, value);
+    this._bus.emit("state:change", { path, value });
+    this._bus.emit(`state:change:${path}`, { value });
+    return value;
+  }
+
+  subscribe(path, handler) {
+    return this._bus.on(`state:change:${path}`, handler);
+  }
+
+  subscribeAny(handler) {
+    return this._bus.on("state:change", handler);
+  }
+}
+
+
+/* ============================================================================
+   DATA FEED MANAGER
+   ----------------------------------------------------------------------------
+   Owns the connection lifecycle to the Deriv WebSocket API and streams clean,
+   normalized candle data to the rest of the application. This module is
+   deliberately "dumb" about markets: it does not detect trends, score
+   anything, or decide on entries - it only connects, subscribes, streams,
+   reconnects, and reports errors. TrendEngine/ScannerManager/etc. consume its
+   public methods and events below and remain untouched by this module.
+
+   Public surface consumers rely on:
+     connect() / disconnect()
+     subscribeSymbol(symbolId, callback?) / unsubscribeSymbol(symbolId, callback?)
+     subscribeSymbols(ids) / unsubscribeSymbols(ids) / unsubscribeAll()
+     subscribeAllVolatility() / subscribeAllSymbols()
+     getSubscribedSymbols() / getStatus() / getLatestPrice(symbolId)
+     getSupportedTimeframes() / setTimeframes(timeframes)
+     getCandles(symbolId, timeframe) / getLatestCandle(symbolId, timeframe)
+
+   Events emitted on the shared EventBus:
+     datafeed:status         {status, message}
+     datafeed:error          {message, code}
+     datafeed:tick           {symbolId, price, timestamp}   (derived from candles, kept for backward compatibility)
+     datafeed:candle-history {symbolId, timeframe, candles}
+     datafeed:candle         {symbolId, timeframe, candle, isNew}
+   ==========================================================================*/
+class DataFeedManager {
+  /**
+   * @param {EventBus} eventBus - shared pub/sub bus used to announce status/data.
+   * @param {StateManager} stateManager - shared app state (connection.* keys).
+   */
+  constructor(eventBus, stateManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+
+    this._ws = null;
+    this._manualDisconnect = false;
+    this._reconnectAttempts = 0;
+    this._reconnectTimer = null;
+
+    // Which Deriv endpoint we're currently speaking to. Starts on the new
+    // public API; _handleClose() flips this to "legacy" automatically if
+    // the new endpoint fails to ever deliver data across a couple of
+    // attempts in a row (see _handleClose for the exact policy).
+    this._endpointMode = "new";
+    this._newEndpointFailures = 0;
+    // Set true the moment any well-formed message arrives on the current
+    // socket - proves the endpoint is actually serving data, not just
+    // accepting a TCP/WS handshake before rejecting every request.
+    this._connectionProvedLive = false;
+
+    this._heartbeatTimer = null;
+    this._heartbeatTimeoutTimer = null;
+    this._pingSentAt = null;
+
+    this._reqIdSeq = 1;
+    this._pendingRequests = new Map(); // req_id -> { symbolId, timeframe }
+
+    this._callbacks = new Map();      // symbolId -> Set<legacy tick callback>
+    this._activeSymbols = new Map();  // symbolId -> Set<timeframe id> currently streaming
+    this._streams = new Map();        // "symbol:timeframe" -> stream record
+    this._streamsBySubscription = new Map(); // server subscriptionId -> stream record (O(1) OHLC routing)
+    this._latestPrice = new Map();    // symbolId -> {price, timestamp}
+
+    // Default timeframe set applied whenever a symbol is subscribed. Callers
+    // can narrow/widen this per-app via setTimeframes(). Sliced off the
+    // shared Config.TIMEFRAME_IDS array (computed once) rather than
+    // re-mapping Config.TIMEFRAMES here, since this array is reassigned
+    // wholesale (not mutated) by setTimeframes().
+    this._timeframes = Config.TIMEFRAME_IDS.slice();
+
+    this._lastStateTouch = 0; // throttles connection.lastMessageAt writes
+  }
+
+  /* ================= connection lifecycle ================= */
+
+  /** Current connection status string ("idle"|"connecting"|"connected"|"disconnected"|"error"). */
+  getStatus() { return this._state.get("connection.status"); }
+
+  /** Opens the WebSocket if not already open/opening; no-op otherwise. Clears any pending manual-disconnect flag and reconnect timer first. */
+  connect() {
+    if (this._ws && (this._ws.readyState === WebSocket.OPEN || this._ws.readyState === WebSocket.CONNECTING)) return;
+    this._manualDisconnect = false;
+    this._clearReconnectTimer();
+    this._openSocket();
+  }
+
+  /** Closes the WebSocket intentionally - suppresses auto-reconnect (see _handleClose) since this was a deliberate shutdown, not a dropped connection. */
+  disconnect() {
+    this._manualDisconnect = true;
+    this._clearReconnectTimer();
+    this._stopHeartbeat();
+    if (this._ws) {
+      try { this._ws.close(1000, "client disconnect"); } catch (e) { /* socket already closed */ }
+    }
+    this._ws = null;
+    this._setStatus("disconnected", "Data feed disconnected");
+  }
+
+  /* ================= symbol subscriptions ================= */
+  /* Supports selecting one, multiple, or all volatility indices - each call
+     just adds/removes symbols from the active set; the underlying WebSocket
+     connection and its candle streams are managed transparently. */
+
+  /**
+   * Adds a symbol to the actively-streamed set (opening a stream per
+   * configured timeframe on first subscribe) and optionally registers a
+   * legacy tick callback for it.
+   * @param {string} symbolId
+   * @param {function=} callback - receives {symbolId, price, timestamp} ticks.
+   * @returns {function} unsubscribe function bound to this symbol/callback pair.
+   */
+  subscribeSymbol(symbolId, callback) {
+    if (!this._isKnownSymbol(symbolId)) {
+      this._emitError(`Cannot subscribe - unknown symbol: ${symbolId}`);
+      return () => {};
+    }
+    if (callback) {
+      if (!this._callbacks.has(symbolId)) this._callbacks.set(symbolId, new Set());
+      this._callbacks.get(symbolId).add(callback);
+    }
+    if (!this._activeSymbols.has(symbolId)) {
+      this._activeSymbols.set(symbolId, new Set(this._timeframes));
+      this._timeframes.forEach((tf) => this._openStream(symbolId, tf));
+    }
+    return () => this.unsubscribeSymbol(symbolId, callback);
+  }
+
+  /**
+   * Removes a single tick callback for a symbol, or (when no callback is
+   * given) tears the symbol down entirely: closes every stream for it and
+   * forgets its last known price.
+   * @param {string} symbolId
+   * @param {function=} callback
+   */
+  unsubscribeSymbol(symbolId, callback) {
+    if (callback && this._callbacks.has(symbolId)) {
+      this._callbacks.get(symbolId).delete(callback);
+      if (this._callbacks.get(symbolId).size === 0) this._callbacks.delete(symbolId);
+      return; // a single callback was removed; the stream itself stays open
+    }
+    this._callbacks.delete(symbolId);
+    const timeframes = this._activeSymbols.get(symbolId);
+    if (timeframes) timeframes.forEach((tf) => this._closeStream(symbolId, tf));
+    this._activeSymbols.delete(symbolId);
+    this._latestPrice.delete(symbolId);
+  }
+
+  /** Subscribes each id in the list (see subscribeSymbol). */
+  subscribeSymbols(symbolIds) { (symbolIds || []).forEach((id) => this.subscribeSymbol(id)); }
+  /** Unsubscribes each id in the list. Copies the array first since unsubscribeSymbol mutates the underlying active-symbol map as it goes. */
+  unsubscribeSymbols(symbolIds) { (symbolIds || []).slice().forEach((id) => this.unsubscribeSymbol(id)); }
+  /** Unsubscribes every currently-active symbol. */
+  unsubscribeAll() { this.unsubscribeSymbols(this.getSubscribedSymbols()); }
+
+  /** Convenience: subscribes to every classic + 1s volatility index. */
+  subscribeAllVolatility() { this.subscribeSymbols(Config.VOLATILITY_SYMBOLS); }
+  /** Convenience: subscribes to every known symbol in the catalogue. */
+  subscribeAllSymbols() { this.subscribeSymbols(Array.from(Config.SYMBOL_ID_SET)); }
+
+  /** @returns {string[]} symbolIds currently streaming. */
+  getSubscribedSymbols() { return Array.from(this._activeSymbols.keys()); }
+
+  /* ================= timeframe control ================= */
+
+  /** @returns {string[]} every timeframe id the feed knows how to stream. */
+  getSupportedTimeframes() { return Config.TIMEFRAME_IDS.slice(); }
+
+  /**
+   * Replaces the default timeframe set applied to (and retro-applied onto)
+   * every currently-active symbol: opens streams for newly-added
+   * timeframes and closes streams for removed ones.
+   * @param {string[]} timeframes
+   */
+  setTimeframes(timeframes) {
+    const valid = (timeframes || []).filter((tf) => Config.TIMEFRAME_MAP.has(tf));
+    if (!valid.length) return;
+    this._timeframes = valid;
+    this._activeSymbols.forEach((current, symbolId) => {
+      valid.forEach((tf) => { if (!current.has(tf)) { current.add(tf); this._openStream(symbolId, tf); } });
+      Array.from(current).forEach((tf) => {
+        if (!valid.includes(tf)) { current.delete(tf); this._closeStream(symbolId, tf); }
+      });
+    });
+  }
+
+  /* ================= data access ================= */
+
+  /** @returns {number|null} the most recent known price for a symbol, or null if never seen. */
+  getLatestPrice(symbolId) {
+    const entry = this._latestPrice.get(symbolId);
+    return entry ? entry.price : null;
+  }
+
+  /**
+   * @returns {object[]} a defensive copy of the candle history for a
+   * symbol/timeframe (oldest -> newest, last entry may still be live/forming).
+   * Cloned so callers can never mutate internal stream state; prefer
+   * getStreamLength()/getCandleFromEnd()/getStreamSignature() below when a
+   * caller only needs a length check or a single candle, to avoid paying
+   * for this clone.
+   */
+  getCandles(symbolId, timeframe) {
+    const stream = this._streams.get(this._key(symbolId, timeframe));
+    return stream ? stream.candles.slice() : [];
+  }
+
+  /** @returns {object|null} the newest candle (possibly still forming) for a symbol/timeframe. */
+  getLatestCandle(symbolId, timeframe) {
+    const stream = this._streams.get(this._key(symbolId, timeframe));
+    return stream && stream.candles.length ? stream.candles[stream.candles.length - 1] : null;
+  }
+
+  /** @returns {number} how many candles are currently buffered for a symbol/timeframe (0 if no stream). Cheap - no array copy. */
+  getStreamLength(symbolId, timeframe) {
+    const stream = this._streams.get(this._key(symbolId, timeframe));
+    return stream ? stream.candles.length : 0;
+  }
+
+  /**
+   * Reads a single candle counting back from the end of the buffer without
+   * cloning the array - e.g. indexFromEnd=0 is the newest (possibly still
+   * forming) candle, indexFromEnd=1 is the last *completed* one.
+   * @param {string} symbolId
+   * @param {string} timeframe
+   * @param {number} [indexFromEnd=0]
+   * @returns {object|null}
+   */
+  getCandleFromEnd(symbolId, timeframe, indexFromEnd = 0) {
+    const stream = this._streams.get(this._key(symbolId, timeframe));
+    if (!stream) return null;
+    const candles = stream.candles;
+    const idx = candles.length - 1 - indexFromEnd;
+    return idx >= 0 ? candles[idx] : null;
+  }
+
+  /**
+   * Cheap fingerprint of a stream's current contents (length + first/last
+   * epoch + last close) - two calls return the same string iff nothing in
+   * the underlying candle buffer has changed. Lets consumers (e.g.
+   * TrendEngine) memoize expensive per-call work without needing to clone
+   * or diff the actual candle array.
+   * @returns {string|null} null if the stream doesn't exist or is empty.
+   */
+  getStreamSignature(symbolId, timeframe) {
+    const stream = this._streams.get(this._key(symbolId, timeframe));
+    if (!stream || !stream.candles.length) return null;
+    const candles = stream.candles;
+    const last = candles[candles.length - 1];
+    return `${candles.length}:${candles[0].epoch}:${last.epoch}:${last.close}`;
+  }
+
+  /* ================= socket lifecycle (internal) ================= */
+
+  /** Creates the WebSocket and wires its four lifecycle listeners. On a synchronous construction failure (e.g. malformed URL), reports the error and immediately falls into the same reconnect path a dropped connection would take. */
+  _openSocket() {
+    const url = this._endpointMode === "legacy" ? Config.DERIV_WS_URL_LEGACY : Config.DERIV_WS_URL_NEW;
+    this._connectionProvedLive = false;
+    this._setStatus("connecting", `Connecting to Deriv data feed (${this._endpointMode})…`);
+    let ws;
+    try {
+      ws = new WebSocket(url);
+    } catch (err) {
+      this._emitError(`Failed to open WebSocket: ${err.message}`);
+      this._registerEndpointFailure();
+      this._scheduleReconnect();
+      return;
+    }
+    this._ws = ws;
+    ws.addEventListener("open", () => this._handleOpen());
+    ws.addEventListener("message", (evt) => this._handleMessage(evt));
+    ws.addEventListener("error", () => this._emitError("WebSocket connection error"));
+    ws.addEventListener("close", (evt) => this._handleClose(evt));
+  }
+
+  /** Socket "open" handler: resets the backoff counter, starts the heartbeat, and re-establishes every stream that should currently be live (both on first connect and after a reconnect). */
+  _handleOpen() {
+    this._reconnectAttempts = 0;
+    this._setStatus("connected", `Data feed connected (${this._endpointMode} endpoint)`);
+    this._startHeartbeat();
+    // Re-request every stream that should currently be live. This covers
+    // both the first connect and resuming cleanly after a reconnect - old
+    // subscription ids are invalid on a new socket, so history + a fresh
+    // subscription are both re-requested per stream.
+    this._streams.forEach((stream) => {
+      stream.subscriptionId = null;
+      stream.candles = [];
+      this._sendCandleRequest(stream.symbolId, stream.timeframe);
+    });
+  }
+
+  /**
+   * Socket "close" handler: the single entry point for all reconnect
+   * decisions. Stops the heartbeat, invalidates every stream's server-side
+   * subscription id (they don't survive a reconnect) and any in-flight
+   * request bookkeeping, then either reports a clean disconnect (if this
+   * was intentional, see disconnect()) or hands off to _scheduleReconnect().
+   */
+  _handleClose(evt) {
+    this._stopHeartbeat();
+    this._ws = null;
+    this._streams.forEach((stream) => { stream.subscriptionId = null; });
+    this._streamsBySubscription.clear();
+    this._pendingRequests.clear();
+    if (this._manualDisconnect) {
+      this._setStatus("disconnected", "Data feed disconnected");
+      return;
+    }
+    const reason = evt && evt.code ? ` (code ${evt.code})` : "";
+    this._setStatus("disconnected", `Data feed connection lost${reason}`);
+    if (!this._connectionProvedLive) this._registerEndpointFailure();
+    this._scheduleReconnect();
+  }
+
+  /**
+   * Endpoint fallback policy: the new public API (see Config.DERIV_WS_URL_NEW)
+   * is tried first. If it fails to ever prove itself live (no well-formed
+   * message received - see _connectionProvedLive) across two consecutive
+   * connection attempts, this app assumes the new endpoint is unreachable
+   * from a plain browser WebSocket (e.g. it turns out to need a header a
+   * raw `new WebSocket(...)` can't send) and permanently drops back to the
+   * legacy endpoint for the rest of the session, so the scanner keeps
+   * working instead of retrying a dead endpoint forever. A successful,
+   * proven-live connection (see _handleMessage) resets the failure count,
+   * so a transient blip doesn't trigger an unnecessary fallback.
+   */
+  _registerEndpointFailure() {
+    if (this._endpointMode !== "new") return; // already on legacy - nothing to fall back to
+    this._newEndpointFailures += 1;
+    if (this._newEndpointFailures >= 2) {
+      this._endpointMode = "legacy";
+      this._newEndpointFailures = 0;
+      this._emitError("New Deriv API endpoint unreachable - switched to the legacy endpoint");
+    }
+  }
+
+  /**
+   * Reconnect policy, all in one place: bails out if the disconnect was
+   * intentional or the user has turned auto-reconnect off, otherwise
+   * schedules the next _openSocket() attempt with exponential backoff
+   * (1s, 2s, 4s, ... capped at 30s) plus up to 30% random jitter so many
+   * tabs/instances recovering from the same outage don't all retry in
+   * lockstep. Always clears any previously-pending timer first so repeated
+   * calls (e.g. a stray extra close event) can never stack up parallel
+   * reconnect timers.
+   */
+  _scheduleReconnect() {
+    if (this._manualDisconnect) return;
+    // Settings > Data feed > Auto reconnect - defaults to on so existing
+    // behavior is unchanged unless the user explicitly turns it off.
+    const autoReconnect = this._state.get("settings.autoReconnect");
+    if (autoReconnect === false) {
+      this._setStatus("disconnected", "Data feed connection lost - auto reconnect is off");
+      return;
+    }
+    this._clearReconnectTimer();
+    this._reconnectAttempts += 1;
+    // Exponential backoff capped at 30s, with jitter so many tabs/instances
+    // don't all hammer the server in lockstep after an outage.
+    const base = Math.min(30000, 1000 * Math.pow(2, this._reconnectAttempts - 1));
+    const delay = Math.round(base + Math.random() * base * 0.3);
+    this._setStatus("connecting", `Reconnecting in ${Math.round(delay / 1000)}s… (attempt ${this._reconnectAttempts})`);
+    this._reconnectTimer = window.setTimeout(() => this._openSocket(), delay);
+  }
+
+  /** Cancels a pending scheduled reconnect, if any. Safe to call unconditionally. */
+  _clearReconnectTimer() {
+    if (this._reconnectTimer) { window.clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+  }
+
+  /**
+   * Starts the application-level ping/pong heartbeat: an immediate ping
+   * plus one every 30s. Each ping arms a 10s timeout that, if no "pong"
+   * (see _handlePong) arrives first, treats the socket as half-open and
+   * force-closes it - this is what lets a silently-dead connection be
+   * detected and routed into _scheduleReconnect() in seconds rather than
+   * waiting on a TCP-level timeout that can take minutes.
+   */
+  _startHeartbeat() {
+    this._stopHeartbeat();
+    // A small application-level ping keeps the connection alive and lets us
+    // detect a half-open socket (no reply within the timeout) far sooner
+    // than waiting on TCP-level timeouts, which can take minutes.
+    const sendPing = () => {
+      if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
+      this._pingSentAt = Date.now();
+      this._send({ ping: 1 });
+      this._clearHeartbeatTimeout();
+      this._heartbeatTimeoutTimer = window.setTimeout(() => {
+        this._emitError("No response from data feed - reconnecting");
+        try { this._ws && this._ws.close(); } catch (e) { /* ignore */ }
+      }, 10000);
+    };
+    sendPing();
+    this._heartbeatTimer = window.setInterval(sendPing, 30000);
+  }
+
+  /** Stops the heartbeat interval and clears any outstanding pong-timeout. */
+  _stopHeartbeat() {
+    if (this._heartbeatTimer) { window.clearInterval(this._heartbeatTimer); this._heartbeatTimer = null; }
+    this._clearHeartbeatTimeout();
+  }
+
+  /** Cancels the pending "no pong within 10s" timeout. Safe to call unconditionally. */
+  _clearHeartbeatTimeout() {
+    if (this._heartbeatTimeoutTimer) { window.clearTimeout(this._heartbeatTimeoutTimer); this._heartbeatTimeoutTimer = null; }
+  }
+
+  /** Handles a "pong" (msg_type "ping" response): clears the half-open-detection timeout and records round-trip latency. */
+  _handlePong() {
+    this._clearHeartbeatTimeout();
+    if (this._pingSentAt) this._state.set("connection.latency", Date.now() - this._pingSentAt);
+  }
+
+  /* ================= stream (subscription) management (internal) ================= */
+
+  /** Builds the Map key a symbol/timeframe pair is stored/looked-up under. */
+  _key(symbolId, timeframe) { return `${symbolId}:${timeframe}`; }
+
+  /** Creates the local stream record for a symbol/timeframe (idempotent) and, if the socket is already open, immediately requests its history + live subscription. */
+  _openStream(symbolId, timeframe) {
+    const key = this._key(symbolId, timeframe);
+    if (this._streams.has(key)) return;
+    const tfMeta = Config.TIMEFRAME_MAP.get(timeframe);
+    if (!tfMeta) return;
+    this._streams.set(key, {
+      symbolId, timeframe, granularity: tfMeta.granularity,
+      subscriptionId: null, candles: [], lastEmitAt: 0
+    });
+    if (this._ws && this._ws.readyState === WebSocket.OPEN) this._sendCandleRequest(symbolId, timeframe);
+    // Otherwise _handleOpen() will send the request once the socket is up.
+  }
+
+  /** Tears down a stream: tells the server to stop pushing updates for it (if connected) and removes the local record. */
+  _closeStream(symbolId, timeframe) {
+    const key = this._key(symbolId, timeframe);
+    const stream = this._streams.get(key);
+    if (!stream) return;
+    // Explicitly forget the server-side subscription so Deriv stops pushing
+    // updates we no longer want - keeps the feed efficient as symbols are
+    // deselected rather than just ignoring unwanted messages client-side.
+    if (stream.subscriptionId && this._ws && this._ws.readyState === WebSocket.OPEN) {
+      this._send({ forget: stream.subscriptionId });
+    }
+    if (stream.subscriptionId) this._streamsBySubscription.delete(stream.subscriptionId);
+    this._streams.delete(key);
+  }
+
+  /** Issues a candles-history + live-subscription request for one stream and remembers it under a fresh req_id so the eventual reply can be matched back up. */
+  _sendCandleRequest(symbolId, timeframe) {
+    const stream = this._streams.get(this._key(symbolId, timeframe));
+    if (!stream) return;
+    const reqId = this._reqIdSeq++;
+    this._pendingRequests.set(reqId, { symbolId, timeframe });
+    this._send({
+      ticks_history: symbolId,
+      style: "candles",
+      granularity: stream.granularity,
+      count: 300,
+      end: "latest",
+      subscribe: 1,
+      req_id: reqId
+    });
+  }
+
+  /** Serializes and sends a payload if (and only if) the socket is open. @returns {boolean} whether the send was attempted successfully. */
+  _send(payload) {
+    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return false;
+    try { this._ws.send(JSON.stringify(payload)); return true; }
+    catch (err) { this._emitError(`Failed to send request: ${err.message}`); return false; }
+  }
+
+  /* ================= message handling (internal) ================= */
+
+  /** Top-level WebSocket "message" handler: parses JSON once, then routes by msg_type. This is the hottest path in the app - keep it cheap. */
+  _handleMessage(evt) {
+    let msg;
+    try { msg = JSON.parse(evt.data); }
+    catch (err) { this._emitError("Received malformed data from feed"); return; }
+
+    this._touchLastMessage();
+
+    // Any well-formed reply - including an API-level {error: ...} payload -
+    // proves this endpoint is actually alive and answering requests (as
+    // opposed to accepting a handshake and then going silent), so treat it
+    // as a live connection for fallback-accounting purposes either way.
+    if (!this._connectionProvedLive) {
+      this._connectionProvedLive = true;
+      this._newEndpointFailures = 0;
+    }
+
+    if (msg.error) { this._handleApiError(msg); return; }
+
+    switch (msg.msg_type) {
+      case "candles": this._handleCandleHistory(msg); break;
+      case "ohlc": this._handleOhlcUpdate(msg); break;
+      case "ping": this._handlePong(); break;
+      case "forget": break; // acknowledgement of an unsubscribe, nothing to do
+      default: break;       // ignore message types outside market-data streaming
+    }
+  }
+
+  /** Handles an API-level error reply: reports it and, since a rejected symbol/granularity will never succeed, permanently drops the associated stream instead of retrying it forever. */
+  _handleApiError(msg) {
+    const reqId = msg.req_id;
+    const pending = reqId != null ? this._pendingRequests.get(reqId) : null;
+    if (reqId != null) this._pendingRequests.delete(reqId);
+    const context = pending ? ` (${pending.symbolId} ${pending.timeframe})` : "";
+    this._emitError(`${(msg.error && msg.error.message) || "Data feed error"}${context}`, msg.error && msg.error.code);
+
+    // A symbol/granularity the API rejects (bad symbol, unsupported
+    // granularity, etc.) will never succeed - drop the stream instead of
+    // silently retrying it on every future reconnect.
+    if (pending) this._streams.delete(this._key(pending.symbolId, pending.timeframe));
+  }
+
+  /** Handles the initial candles-history reply for a stream: stores the subscription id (indexing it for O(1) OHLC lookups), seeds the candle buffer, and announces the history to the rest of the app. */
+  _handleCandleHistory(msg) {
+    const pending = this._pendingRequests.get(msg.req_id);
+    this._pendingRequests.delete(msg.req_id);
+    if (!pending) return;
+    const stream = this._streams.get(this._key(pending.symbolId, pending.timeframe));
+    if (!stream) return;
+
+    stream.subscriptionId = (msg.subscription && msg.subscription.id) || null;
+    if (stream.subscriptionId) this._streamsBySubscription.set(stream.subscriptionId, stream);
+    stream.candles = (msg.candles || []).map((c) => this._normalizeCandle(c, pending.timeframe));
+    this._updateLatestPriceFromStream(stream);
+
+    this._bus.emit("datafeed:candle-history", {
+      symbolId: pending.symbolId,
+      timeframe: pending.timeframe,
+      candles: stream.candles.slice()
+    });
+  }
+
+  /**
+   * Handles a live OHLC push - the highest-frequency message the feed
+   * produces. Resolves the target stream via the subscriptionId index
+   * (O(1); falls back to a symbol+granularity scan only for the rare case
+   * a message arrives before its subscription id is known), updates or
+   * appends the candle bounded by a rolling window, and throttles the
+   * downstream "datafeed:candle" event so a fast-moving symbol can't flood
+   * the event bus / UI faster than 2/sec - this throttle is the main lever
+   * for keeping CPU usage low under load.
+   */
+  _handleOhlcUpdate(msg) {
+    const ohlc = msg.ohlc;
+    if (!ohlc) return;
+    const subscriptionId = msg.subscription && msg.subscription.id;
+    const stream = this._findStreamBySubscription(subscriptionId) || this._findStreamBySymbolGranularity(ohlc.symbol, Number(ohlc.granularity));
+    if (!stream) return;
+    if (!stream.subscriptionId && subscriptionId) {
+      stream.subscriptionId = subscriptionId;
+      this._streamsBySubscription.set(subscriptionId, stream);
+    }
+
+    const candle = this._normalizeCandle(ohlc, stream.timeframe);
+    const candles = stream.candles;
+    const last = candles[candles.length - 1];
+    let isNew = true;
+    if (last && last.epoch === candle.epoch) {
+      candles[candles.length - 1] = candle;
+      isNew = false;
+    } else {
+      candles.push(candle);
+      // Bound memory/CPU with a rolling window instead of an ever-growing
+      // history array - plenty for any consumer working off recent candles.
+      if (candles.length > 500) candles.shift();
+    }
+
+    this._updateLatestPriceFromStream(stream, candle);
+
+    // Throttle downstream event emission per stream so a fast-moving symbol
+    // can't flood the event bus / UI with more updates than are useful -
+    // this is the main lever for keeping CPU usage low under load.
+    const now = Date.now();
+    if (isNew || now - stream.lastEmitAt >= 500) {
+      stream.lastEmitAt = now;
+      this._bus.emit("datafeed:candle", { symbolId: stream.symbolId, timeframe: stream.timeframe, candle, isNew });
+    }
+  }
+
+  /** O(1) stream lookup by server-assigned subscription id, via the index maintained in _handleCandleHistory/_handleOhlcUpdate/_closeStream/_handleClose. */
+  _findStreamBySubscription(subscriptionId) {
+    if (!subscriptionId) return null;
+    return this._streamsBySubscription.get(subscriptionId) || null;
+  }
+
+  /** Fallback O(n) lookup used only before a stream's subscription id is known (e.g. a race between the history reply and the first OHLC push). */
+  _findStreamBySymbolGranularity(symbolId, granularity) {
+    for (const stream of this._streams.values()) {
+      if (stream.symbolId === symbolId && stream.granularity === granularity) return stream;
+    }
+    return null;
+  }
+
+  /**
+   * Converts a raw Deriv candle/ohlc payload into this app's canonical shape
+   * (numbers coerced, consistent field names).
+   *
+   * epoch precedence matters here: live "ohlc" stream messages carry BOTH
+   * `open_time` (the candle's period start - stable for the whole life of
+   * that candle) and `epoch` (the timestamp of the tick that produced this
+   * particular update - changes on every push while the candle is still
+   * forming). Historical "candles" batch replies (ticks_history) only ever
+   * have `epoch`, and there it correctly means period start.
+   *
+   * open_time must be preferred when present, or every live update of a
+   * still-forming candle gets a different `epoch` even though open/high/low
+   * haven't changed - which (via DataFeedManager._handleOhlcUpdate's
+   * `last.epoch === candle.epoch` check) makes each update look like a
+   * brand-new candle instead of an update to the existing one. Downstream,
+   * EntryEngine's isNewCandle check reads that as "a new candle completed"
+   * every ~few seconds, repeatedly re-detecting and instantly re-triggering
+   * the same setup on what is actually still one open candle.
+   */
+  _normalizeCandle(raw, timeframe) {
+    return {
+      timeframe,
+      epoch: Number(raw.open_time != null ? raw.open_time : raw.epoch),
+      open: Number(raw.open),
+      high: Number(raw.high),
+      low: Number(raw.low),
+      close: Number(raw.close)
+    };
+  }
+
+  /**
+   * Surfaces a "live price" tick from whichever stream currently represents
+   * the shortest configured timeframe for its symbol - avoids running a
+   * separate tick subscription purely to get a spot price. Uses the
+   * pre-computed Config.TIMEFRAME_IDS ordering (no per-call array
+   * allocation) to find that shortest active timeframe.
+   */
+  _updateLatestPriceFromStream(stream, candleOverride) {
+    // The shortest active timeframe updates most frequently, so it doubles
+    // as the "live price" source - this avoids running a separate tick
+    // subscription purely to surface a spot price, keeping the feed lean.
+    const activeTfs = this._activeSymbols.get(stream.symbolId);
+    const primaryTf = activeTfs
+      ? Config.TIMEFRAME_IDS.find((id) => activeTfs.has(id))
+      : stream.timeframe;
+    if (primaryTf && primaryTf !== stream.timeframe) return;
+
+    const candle = candleOverride || stream.candles[stream.candles.length - 1];
+    if (!candle) return;
+    const tick = { symbolId: stream.symbolId, price: candle.close, timestamp: candle.epoch * 1000 };
+    this._latestPrice.set(stream.symbolId, { price: tick.price, timestamp: tick.timestamp });
+
+    const callbacks = this._callbacks.get(stream.symbolId);
+    if (callbacks) callbacks.forEach((cb) => { try { cb(tick); } catch (e) { console.error(e); } });
+    this._bus.emit("datafeed:tick", tick);
+  }
+
+  /* ================= status / error / misc (internal) ================= */
+
+  /** @returns {boolean} whether symbolId exists in the symbol catalogue (O(1) Set lookup). */
+  _isKnownSymbol(symbolId) { return Config.SYMBOL_ID_SET.has(symbolId); }
+
+  /** Updates connection.status in shared state and announces it on the bus. */
+  _setStatus(status, message) {
+    this._state.set("connection.status", status);
+    this._bus.emit("datafeed:status", { status, message });
+  }
+
+  /** Logs and broadcasts a feed-level error for AlertsManager/UI to surface. */
+  _emitError(message, code) {
+    console.warn(`[DataFeedManager] ${message}`);
+    this._bus.emit("datafeed:error", { message, code: code || null });
+  }
+
+  /** Records connection.lastMessageAt, throttled to at most once/second since every WebSocket message would otherwise trigger a state-change fan-out. */
+  _touchLastMessage() {
+    // state.set() fans out to subscribers/UI re-renders, so this is
+    // throttled rather than run on every single WebSocket message.
+    const now = Date.now();
+    if (now - this._lastStateTouch < 1000) return;
+    this._lastStateTouch = now;
+    this._state.set("connection.lastMessageAt", now);
+  }
+}
+
+
+/* ============================================================================
+   TREND ENGINE
+   ----------------------------------------------------------------------------
+   Sole responsibility: determine market BIAS for a symbol/timeframe from
+   price history. It is completely independent from the Entry Engine - it
+   never looks at entry conditions, never emits signals, and never writes to
+   activeSignals/signalHistory. It only reads candles (via DataFeedManager)
+   and returns a bias verdict.
+
+   Public surface: getTrend(symbol, timeframe) — this is the ONLY method
+   other modules are meant to call. Everything else below is an internal
+   implementation detail (underscore-prefixed, per this codebase's
+   convention for "private" methods).
+   ==========================================================================*/
+class TrendEngine {
+  constructor(eventBus, stateManager, dataFeed) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._dataFeed = dataFeed;
+
+    // Minimum bars needed: EMA200 wants 200 closes, plus 5 completed bars of
+    // slope lookback, plus a little headroom for a stable Wilder ADX(14)
+    // average. Below this we can't honestly score the trend.
+    this._MIN_CANDLES = 210;
+
+    // Memoizes the last computed result per "symbol::timeframe", keyed off
+    // a cheap fingerprint of the candle stream it was computed from (see
+    // _finish/getTrend). ScannerManager and EntryEngine both call
+    // getTrend() for the same symbol/timeframe within the same scan cycle;
+    // when the underlying candles haven't changed between those two calls,
+    // this lets the second call skip re-running EMA/ADX entirely instead
+    // of duplicating the same O(n) work.
+    this._cache = new Map();
+  }
+
+  /**
+   * Determine market bias for a symbol on a given timeframe.
+   * @param {string} symbol - symbolId, e.g. "R_100"
+   * @param {string} timeframe - timeframe id, e.g. "15m" / "30m" / "1h"
+   * @returns {{
+   *   symbol: string,
+   *   timeframe: string,
+   *   status: ('ok'|'insufficient_data'|'no_data'),
+   *   price: (number|null),
+   *   ema20: (number|null), ema50: (number|null), ema200: (number|null),
+   *   priceVsEma200: ('above'|'below'|'equal'|null),
+   *   emaAlignment: ('bullish'|'bearish'|'mixed'|null),
+   *   ema200Slope: ('rising'|'falling'|'flat'|null),
+   *   adx14: (number|null),
+   *   diPlus: (number|null), diMinus: (number|null),
+   *   score: (number|null),          // signed, -5..+5
+   *   bias: ('Strong Bullish'|'Bullish'|'Mixed'|'Bearish'|'Strong Bearish'|null),
+   *   computedAt: number
+   * }}
+   */
+  getTrend(symbol, timeframe) {
+    const computedAt = Date.now();
+    const key = this._key(symbol, timeframe);
+
+    // Cheap fingerprint (length + first/last epoch + last close) of the
+    // underlying candle stream, obtained without cloning it. If it matches
+    // what we last computed from, the candles are unchanged and the cached
+    // result is still exactly correct - just hand it back with a fresh
+    // timestamp instead of re-running the indicator math.
+    const signature = this._dataFeed && typeof this._dataFeed.getStreamSignature === "function"
+      ? this._dataFeed.getStreamSignature(symbol, timeframe)
+      : null;
+    if (signature) {
+      const cached = this._cache.get(key);
+      if (cached && cached.signature === signature) {
+        return { ...cached.result, computedAt };
+      }
+    }
+
+    const candles = this._dataFeed && typeof this._dataFeed.getCandles === "function"
+      ? this._dataFeed.getCandles(symbol, timeframe)
+      : [];
+
+    if (!candles || candles.length === 0) {
+      return this._finish(key, signature, this._emptyResult(symbol, timeframe, "no_data", computedAt));
+    }
+    if (candles.length < this._MIN_CANDLES) {
+      return this._finish(key, signature, this._emptyResult(symbol, timeframe, "insufficient_data", computedAt));
+    }
+
+    // The most recent candle may still be forming/live. EMA/price use the
+    // full series (including the live bar), but the EMA200 "previous 5
+    // completed candles" slope deliberately looks at completed bars only.
+    const closes = candles.map((c) => c.close);
+    const completed = candles.slice(0, -1);
+
+    const ema20Series = this._ema(closes, 20);
+    const ema50Series = this._ema(closes, 50);
+    const ema200Series = this._ema(closes, 200);
+    const ema200CompletedSeries = this._ema(completed.map((c) => c.close), 200);
+
+    const lastIdx = closes.length - 1;
+    const price = closes[lastIdx];
+    const ema20 = ema20Series[lastIdx];
+    const ema50 = ema50Series[lastIdx];
+    const ema200 = ema200Series[lastIdx];
+
+    if (ema20 == null || ema50 == null || ema200 == null) {
+      return this._finish(key, signature, this._emptyResult(symbol, timeframe, "insufficient_data", computedAt));
+    }
+
+    /* ---- Price relative to EMA200 ---- */
+    const priceVsEma200 = price > ema200 ? "above" : price < ema200 ? "below" : "equal";
+
+    /* ---- EMA alignment (stacked order) ---- */
+    // "EMA20 alignment": EMA20 vs EMA50. "EMA50 alignment": EMA50 vs EMA200.
+    // Full bullish stack is EMA20 > EMA50 > EMA200; full bearish is reversed.
+    const ema20Aligned = ema20 > ema50 ? "bullish" : ema20 < ema50 ? "bearish" : "flat";
+    const ema50Aligned = ema50 > ema200 ? "bullish" : ema50 < ema200 ? "bearish" : "flat";
+    let emaAlignment = "mixed";
+    if (ema20Aligned === "bullish" && ema50Aligned === "bullish") emaAlignment = "bullish";
+    else if (ema20Aligned === "bearish" && ema50Aligned === "bearish") emaAlignment = "bearish";
+
+    /* ---- EMA200 slope over the previous 5 completed candles ---- */
+    let ema200Slope = "flat";
+    const compLastIdx = ema200CompletedSeries.length - 1;
+    const compPrevIdx = compLastIdx - 5;
+    if (compPrevIdx >= 0 && ema200CompletedSeries[compLastIdx] != null && ema200CompletedSeries[compPrevIdx] != null) {
+      const slopeValue = ema200CompletedSeries[compLastIdx] - ema200CompletedSeries[compPrevIdx];
+      // Treat sub-basis-point drift as flat rather than noise-driven rising/falling.
+      const epsilon = ema200CompletedSeries[compLastIdx] * 0.0001;
+      ema200Slope = slopeValue > epsilon ? "rising" : slopeValue < -epsilon ? "falling" : "flat";
+    }
+
+    /* ---- ADX(14) with +DI/-DI (Wilder) ---- */
+    const dmi = this._adx(candles, 14);
+    const adx14 = dmi.adx;
+    const diPlus = dmi.diPlus;
+    const diMinus = dmi.diMinus;
+
+    /* ---- Trend Score: one signed point per criterion, -5..+5 ---- */
+    let score = 0;
+    score += priceVsEma200 === "above" ? 1 : priceVsEma200 === "below" ? -1 : 0;
+    score += ema20Aligned === "bullish" ? 1 : ema20Aligned === "bearish" ? -1 : 0;
+    score += ema50Aligned === "bullish" ? 1 : ema50Aligned === "bearish" ? -1 : 0;
+    score += ema200Slope === "rising" ? 1 : ema200Slope === "falling" ? -1 : 0;
+    if (adx14 != null && adx14 > 25 && diPlus != null && diMinus != null) {
+      score += diPlus > diMinus ? 1 : diPlus < diMinus ? -1 : 0;
+    }
+
+    const bias = this._scoreToBias(score);
+
+    return this._finish(key, signature, {
+      symbol, symbolId: symbol, timeframe,
+      status: "ok",
+      price,
+      ema20, ema50, ema200,
+      priceVsEma200,
+      emaAlignment,
+      ema200Slope,
+      adx14, diPlus, diMinus,
+      score,
+      bias,
+      computedAt
+    });
+  }
+
+  /* ================= internal helpers (not part of the public contract) ================= */
+
+  /** Builds the memoization cache key for a symbol/timeframe pair. */
+  _key(symbol, timeframe) { return `${symbol}::${timeframe}`; }
+
+  /** Stores a freshly-computed result in the memoization cache (keyed by the stream signature it was computed from) and returns it. A no-op cache write when signature is null (no stream to fingerprint). */
+  _finish(key, signature, result) {
+    if (signature) this._cache.set(key, { signature, result });
+    return result;
+  }
+
+  /** Builds the "nothing to report" shape shared by the no_data/insufficient_data early-outs. */
+  _emptyResult(symbol, timeframe, status, computedAt) {
+    return {
+      symbol, symbolId: symbol, timeframe,
+      status,
+      price: null, ema20: null, ema50: null, ema200: null,
+      priceVsEma200: null, emaAlignment: null, ema200Slope: null,
+      adx14: null, diPlus: null, diMinus: null,
+      score: null, bias: null,
+      computedAt
+    };
+  }
+
+  /** Maps the signed -5..+5 Trend Score onto its display bias label. */
+  _scoreToBias(score) {
+    if (score >= 4) return "Strong Bullish";
+    if (score >= 2) return "Bullish";
+    if (score >= -1) return "Mixed";
+    if (score >= -3) return "Bearish";
+    return "Strong Bearish";
+  }
+
+  /** Exponential moving average series (SMA-seeded), aligned to `values`. */
+  _ema(values, period) {
+    const out = new Array(values.length).fill(null);
+    if (values.length < period) return out;
+    let sum = 0;
+    for (let i = 0; i < period; i++) sum += values[i];
+    let prev = sum / period;
+    out[period - 1] = prev;
+    const k = 2 / (period + 1);
+    for (let i = period; i < values.length; i++) {
+      prev = (values[i] - prev) * k + prev;
+      out[i] = prev;
+    }
+    return out;
+  }
+
+  /**
+   * Wilder's ADX(period) plus the final +DI/-DI reading, from OHLC candles.
+   * A single forward pass builds true range / +DM / -DM per bar, then a
+   * second pass Wilder-smooths them into DI/DX, then a third averages/
+   * smooths DX into ADX - each pass is O(n) with fixed-size scratch arrays,
+   * no per-iteration allocation beyond those three arrays.
+   */
+  _adx(candles, period) {
+    const n = candles.length;
+    if (n < period * 2 + 1) return { adx: null, diPlus: null, diMinus: null };
+
+    const tr = new Array(n).fill(0);
+    const plusDM = new Array(n).fill(0);
+    const minusDM = new Array(n).fill(0);
+
+    for (let i = 1; i < n; i++) {
+      const cur = candles[i], prev = candles[i - 1];
+      tr[i] = Math.max(
+        cur.high - cur.low,
+        Math.abs(cur.high - prev.close),
+        Math.abs(cur.low - prev.close)
+      );
+      const upMove = cur.high - prev.high;
+      const downMove = prev.low - cur.low;
+      plusDM[i] = (upMove > downMove && upMove > 0) ? upMove : 0;
+      minusDM[i] = (downMove > upMove && downMove > 0) ? downMove : 0;
+    }
+
+    // Wilder smoothing: seed with the sum of the first `period` values
+    // (indices 1..period), then apply the recursive smoothing formula.
+    let atr = 0, plusDM14 = 0, minusDM14 = 0;
+    for (let i = 1; i <= period; i++) { atr += tr[i]; plusDM14 += plusDM[i]; minusDM14 += minusDM[i]; }
+
+    // A dead-flat run of candles (identical OHLC, e.g. a stalled synthetic
+    // index tick) can leave the summed true range at exactly 0. Dividing by
+    // it would produce NaN/Infinity that then poisons every later smoothed
+    // value (the recursive formula below carries `atr` forward forever) -
+    // guard it the same way the DX-combination step already guards its own
+    // division a few lines down.
+    let diPlus = 100 * (plusDM14 / (atr || 1));
+    let diMinus = 100 * (minusDM14 / (atr || 1));
+    const dxValues = [];
+    dxValues.push(100 * Math.abs(diPlus - diMinus) / (diPlus + diMinus || 1));
+
+    for (let i = period + 1; i < n; i++) {
+      atr = atr - atr / period + tr[i];
+      plusDM14 = plusDM14 - plusDM14 / period + plusDM[i];
+      minusDM14 = minusDM14 - minusDM14 / period + minusDM[i];
+      diPlus = 100 * (plusDM14 / (atr || 1));
+      diMinus = 100 * (minusDM14 / (atr || 1));
+      dxValues.push(100 * Math.abs(diPlus - diMinus) / (diPlus + diMinus || 1));
+    }
+
+    if (dxValues.length < period) return { adx: null, diPlus, diMinus };
+
+    // First ADX = simple average of the first `period` DX values, then
+    // Wilder-smoothed for the rest.
+    let adx = 0;
+    for (let i = 0; i < period; i++) adx += dxValues[i];
+    adx = adx / period;
+    for (let i = period; i < dxValues.length; i++) {
+      adx = (adx * (period - 1) + dxValues[i]) / period;
+    }
+
+    return { adx, diPlus, diMinus };
+  }
+}
+
+
+/* ============================================================================
+   TREND SCORE CALCULATOR
+   ----------------------------------------------------------------------------
+   The Trend Score itself is computed inside TrendEngine (which owns every
+   input the score depends on). This module stays a thin adapter so the rest
+   of the pipeline (ScannerManager, UI) has a stable place to read
+   score/grade from without reaching into TrendEngine internals.
+   ==========================================================================*/
+class TrendScoreCalculator {
+  constructor(eventBus, stateManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+  }
+
+  /**
+   * @param {object} trendResult - output of TrendEngine.getTrend
+   * @returns {{score:(number|null), grade:(string|null), status:string}}
+   */
+  calculateScore(trendResult) {
+    if (!trendResult || trendResult.status !== "ok") {
+      return { score: null, grade: null, status: (trendResult && trendResult.status) || "not_implemented" };
+    }
+    return { score: trendResult.score, grade: trendResult.bias, status: "ok" };
+  }
+}
+
+
+/* ============================================================================
+   ENTRY SETUP STATE MACHINE STATES
+   ----------------------------------------------------------------------------
+   Idle      - nothing detected yet; watching each newly-completed candle for
+               a qualifying no-wick pattern candle in the trend's direction.
+   Watching  - a pattern candle was found; its level is stored and the
+               countdown ticks down once per new completed candle while
+               waiting for a retest.
+   Triggered - the level was retested within the countdown window; a BUY/SELL
+               signal has been generated for this setup.
+   Expired   - the countdown reached zero with no retest (or the trend
+               reversed away from the setup's direction) before triggering.
+   ==========================================================================*/
+const EntryState = Object.freeze({
+  IDLE: "Idle",
+  WATCHING: "Watching",
+  TRIGGERED: "Triggered",
+  EXPIRED: "Expired"
+});
+
+/* ============================================================================
+   ENTRY ENGINE
+   ----------------------------------------------------------------------------
+   Sole responsibility: turn a trend BIAS into a BUY/SELL entry signal using
+   the No-Wick price-action strategy. It never calculates indicators (no
+   EMAs, no ADX, nothing derived) - its only analytical input is
+   TrendEngine.getTrend(symbol, trendTimeframe). Raw candle OHLC is read
+   purely for pattern/price-action recognition, not indicator math.
+
+   Trend timeframe vs. entry timeframe:
+     These are deliberately two separate, independently-configurable
+     timeframes rather than one dual-purpose timeframe:
+       - trendTimeframe -> TrendEngine.getTrend() only. Determines
+         direction (BUY-only / SELL-only / ignore-on-Mixed). Never read for
+         candle data.
+       - timeframe (entry timeframe) -> everything else: the state machine
+         key, the no-wick pattern candle, and every retest check. Trend
+         determines direction only; the no-wick + retest pattern determines
+         entry, always on its own timeframe.
+     evaluate() defaults trendTimeframe to the entry timeframe if the
+     caller doesn't pass one, so existing single-timeframe callers keep
+     working unchanged.
+
+   Gating on trend bias:
+     Bullish (Bullish / Strong Bullish) -> only BUY setups are evaluated
+     Bearish (Bearish / Strong Bearish) -> only SELL setups are evaluated
+     Mixed                              -> setups are ignored entirely
+
+   No-Wick strategy:
+     BUY  - find a bullish candle with (effectively) no lower wick, store its
+            low. If any of the next 10 candles retests that low, generate BUY.
+     SELL - mirror of the above: a bearish candle with no upper wick stores
+            its high; a retest of that high within 10 candles generates SELL.
+
+   State machine:
+     Every "symbol:timeframe" pair owns its own independent state machine
+     (Idle -> Watching -> Triggered|Expired -> back to Idle/Watching on the
+     next candle). Machines live in a Map keyed by symbol+timeframe, so
+     evaluating one symbol never reads or mutates another symbol's data -
+     multiple symbols scan and progress fully independently. Each setup a
+     machine detects carries its own snapshot: Symbol, Direction, Trend,
+     Trend Score, Timeframe, Countdown, Detection Time, and Entry Level (see
+     _setupSnapshot). A machine tracks one setup at a time; once that setup
+     resolves (Triggered or Expired) the machine is free to pick up the next
+     one on the following completed candle.
+
+   Public surface: evaluate(symbol, timeframe) — the primary method other
+   modules should call, once per scan cycle. getSetup/getAllSetups expose
+   read-only access to current machine state for UI/debugging. Everything
+   else is internal (underscore-prefixed).
+   ==========================================================================*/
+class EntryEngine {
+  /**
+   * @param {EventBus} eventBus
+   * @param {StateManager} stateManager
+   * @param {TrendEngine} trendEngine - sole analytical input; see class doc above.
+   * @param {DataFeedManager} dataFeed - source of raw OHLC for pattern/retest checks.
+   */
+  constructor(eventBus, stateManager, trendEngine, dataFeed) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._trendEngine = trendEngine;
+    this._dataFeed = dataFeed;
+
+    // Fallback for how many completed candles a Watching setup stays alive
+    // for before expiring without a retest, used only if the user's
+    // "countdown length" setting is missing/invalid - see _countdownLength().
+    this._RETEST_LOOKBACK = 10;
+
+    // key `${symbol}::${timeframe}` -> machine { symbol, timeframe, state, setup, lastProcessedEpoch }
+    this._machines = new Map();
+  }
+
+  /**
+   * Advance (or create) the state machine for symbol/timeframe by one scan
+   * cycle. Cheap to call repeatedly - real state transitions only happen
+   * once per newly-completed candle, no matter how often the scanner ticks.
+   * @param {string} symbol - symbolId, e.g. "R_100"
+   * @param {string} timeframe - ENTRY timeframe id, e.g. "15m" / "30m" / "1h".
+   *   Drives the state machine key, pattern-candle detection, and every
+   *   retest check.
+   * @param {string} [trendTimeframe] - TREND (bias) timeframe. Direction
+   *   only - never read for candle data. Defaults to `timeframe` if
+   *   omitted, so trend and entry can share a timeframe when that's what's
+   *   wanted, or be configured independently (see Config.DEFAULT_SETTINGS /
+   *   ScannerManager._tick).
+   * @returns {{status:string, state:string, hasSignal:boolean, signal:(object|null), setup:(object|null)}}
+   */
+  evaluate(symbol, timeframe, trendTimeframe) {
+    const machine = this._getOrCreateMachine(symbol, timeframe);
+    const biasTimeframe = trendTimeframe || timeframe;
+
+    // The ONLY analytical input this engine consumes: market bias - read
+    // from the trend timeframe, which may differ from the entry timeframe
+    // that everything else below (pattern candle, retests) is read from.
+    const trend = this._trendEngine.getTrend(symbol, biasTimeframe);
+    if (!trend || trend.status !== "ok") {
+      // A transient data gap shouldn't cancel an in-progress watch - leave
+      // the machine exactly as it is and just report why nothing advanced.
+      return this._toResult(machine, (trend && trend.status) || "no_data");
+    }
+
+    // Only completed candles ever drive a transition - the still-forming
+    // last candle is excluded from both pattern detection and retests. This
+    // machine only ever looks at ONE of them (the latest completed candle),
+    // so read it directly off the stream (O(1), no clone) instead of
+    // pulling the whole ~300-candle array via getCandles() just to slice
+    // off the last element and read the new last element back out.
+    const totalCandles = this._dataFeed && typeof this._dataFeed.getStreamLength === "function"
+      ? this._dataFeed.getStreamLength(symbol, timeframe)
+      : 0;
+    if (totalCandles < 3) {
+      return this._toResult(machine, "insufficient_data");
+    }
+    const latestCompleted = typeof this._dataFeed.getCandleFromEnd === "function"
+      ? this._dataFeed.getCandleFromEnd(symbol, timeframe, 1) // index 1 from the end = last completed candle
+      : null;
+    if (!latestCompleted) {
+      return this._toResult(machine, "insufficient_data");
+    }
+    const isNewCandle = machine.lastProcessedEpoch !== latestCompleted.epoch;
+    const direction = this._directionFromBias(trend.bias); // "bullish" | "bearish" | "mixed"
+
+    switch (machine.state) {
+      case EntryState.IDLE:
+      case EntryState.TRIGGERED:
+      case EntryState.EXPIRED:
+        // Resolved (or never-started) - look for a fresh setup on the newest candle.
+        if (isNewCandle) this._tryDetect(machine, latestCompleted, direction, trend, biasTimeframe);
+        break;
+      case EntryState.WATCHING:
+        if (direction !== machine.setup.biasDirection) {
+          // The bias that justified watching for this setup no longer holds.
+          this._expire(machine, "trend_reversed");
+        } else if (isNewCandle) {
+          this._advanceWatching(machine, latestCompleted, trend);
+        }
+        break;
+    }
+
+    if (isNewCandle) machine.lastProcessedEpoch = latestCompleted.epoch;
+    return this._toResult(machine, "ok");
+  }
+
+  /** Read-only snapshot of one symbol/timeframe's current setup (or null if Idle). */
+  getSetup(symbol, timeframe) {
+    const machine = this._machines.get(this._key(symbol, timeframe));
+    return machine && machine.setup ? this._setupSnapshot(machine.setup) : null;
+  }
+
+  /** Read-only snapshot of every machine's current setup, keyed by symbol:timeframe. */
+  getAllSetups() {
+    const out = {};
+    this._machines.forEach((machine, key) => {
+      out[key] = machine.setup ? this._setupSnapshot(machine.setup) : { state: machine.state };
+    });
+    return out;
+  }
+
+  /* ================= internal: machine lifecycle ================= */
+
+  /** Builds the Map key a symbol/timeframe's state machine is stored/looked-up under. */
+  _key(symbol, timeframe) { return `${symbol}::${timeframe}`; }
+
+  /** Returns the existing state machine for symbol/timeframe, creating a fresh Idle one on first use. */
+  _getOrCreateMachine(symbol, timeframe) {
+    const key = this._key(symbol, timeframe);
+    let machine = this._machines.get(key);
+    if (!machine) {
+      machine = { symbol, timeframe, state: EntryState.IDLE, setup: null, lastProcessedEpoch: null };
+      this._machines.set(key, machine);
+    }
+    return machine;
+  }
+
+  /** Idle/Triggered/Expired -> tries to start Watching a brand-new setup on the latest completed candle. */
+  _tryDetect(machine, patternCandle, direction, trend, biasTimeframe) {
+    if (direction === "mixed") {
+      if (machine.state !== EntryState.IDLE) this._resetToIdle(machine);
+      return;
+    }
+
+    let directionLabel = null;
+    let level = null;
+    if (direction === "bullish" && this._isNoLowerWickBullish(patternCandle)) {
+      directionLabel = "BUY";
+      level = patternCandle.low;
+    } else if (direction === "bearish" && this._isNoUpperWickBearish(patternCandle)) {
+      directionLabel = "SELL";
+      level = patternCandle.high;
+    }
+
+    if (!directionLabel) {
+      if (machine.state !== EntryState.IDLE) this._resetToIdle(machine);
+      return;
+    }
+
+    const detectionTime = Date.now();
+    machine.setup = {
+      id: `${machine.symbol}:${machine.timeframe}:${patternCandle.epoch}`,
+      symbol: machine.symbol,
+      timeframe: machine.timeframe,
+      directionLabel,            // "BUY" | "SELL" - for display/signal payloads
+      biasDirection: direction,  // "bullish" | "bearish" - for reversal checks
+      trend: trend.bias,
+      trendScore: trend.score,
+      trendTimeframe: biasTimeframe, // timeframe the bias was read from - may differ from `timeframe` (entry)
+      level,
+      pattern: this._candleSnapshot(patternCandle),
+      retest: null,
+      // maxRetestCandles is captured once, at detection - candlesSinceDetection
+      // then counts up from 0 on every subsequent completed candle. Retest is
+      // only ever checked while candlesSinceDetection <= maxRetestCandles (see
+      // _advanceWatching), so candle 1 through candle N after detection are
+      // eligible and candle N+1 never is - explicitly, not just as a side
+      // effect of a decrementing counter reaching zero.
+      maxRetestCandles: this._countdownLength(),
+      candlesSinceDetection: 0,
+      countdown: this._countdownLength(), // mirrors remaining candles, for display (see _advanceWatching)
+      detectionTime,
+      detectionEpoch: patternCandle.epoch,
+      state: EntryState.WATCHING
+    };
+    machine.state = EntryState.WATCHING;
+  }
+
+  /** Watching -> checks the newest completed candle for a retest, else ticks the countdown down. */
+  _advanceWatching(machine, retestCandle, trend) {
+    const setup = machine.setup;
+    // Keep the trend snapshot current while the setup is being watched.
+    setup.trend = trend.bias;
+    setup.trendScore = trend.score;
+
+    // This is the setup's Nth completed candle since detection (1-indexed -
+    // the detection candle itself is 0 and is never checked here, since
+    // _advanceWatching only ever runs on a LATER isNewCandle transition).
+    setup.candlesSinceDetection += 1;
+
+    // Explicit bound, not just a side effect of decrementing to zero: only
+    // candlesSinceDetection 1..maxRetestCandles are eligible for a retest.
+    // Guards against a machine somehow going stale past its window (e.g. a
+    // reconnect gap collapsing several completed candles into one scan
+    // tick) still allowing a trigger beyond candle N.
+    if (setup.candlesSinceDetection > setup.maxRetestCandles) {
+      this._expire(machine, "countdown_elapsed");
+      return;
+    }
+
+    const retested = setup.biasDirection === "bullish"
+      ? retestCandle.low <= setup.level
+      : retestCandle.high >= setup.level;
+
+    if (retested) {
+      this._trigger(machine, retestCandle);
+      return;
+    }
+
+    setup.countdown = setup.maxRetestCandles - setup.candlesSinceDetection;
+    if (setup.candlesSinceDetection >= setup.maxRetestCandles) this._expire(machine, "countdown_elapsed");
+  }
+
+  /** Watching -> Triggered: builds the signal, logs it, and notifies the rest of the app. */
+  _trigger(machine, retestCandle) {
+    const setup = machine.setup;
+    setup.state = EntryState.TRIGGERED;
+    setup.retest = this._candleSnapshot(retestCandle);
+    setup.triggeredAt = Date.now();
+    machine.state = EntryState.TRIGGERED;
+
+    const signal = {
+      symbol: setup.symbol, symbolId: setup.symbol, timeframe: setup.timeframe,
+      direction: setup.directionLabel, // "BUY" | "SELL"
+      strategy: "no-wick",
+      level: setup.level,
+      pattern: setup.pattern,
+      retest: setup.retest,
+      trendBias: setup.trend,
+      trendScore: setup.trendScore,
+      trendTimeframe: setup.trendTimeframe,
+      countdown: setup.countdown,
+      detectionTime: setup.detectionTime,
+      generatedAt: setup.triggeredAt
+    };
+
+    this._pushActiveSignal({ ...signal, setupId: setup.id });
+    this._pushHistory({ ...this._setupSnapshot(setup), outcome: "triggered", signal });
+    // AlertsManager needs a stable per-setup id to dedupe against re-firing
+    // the same trigger (e.g. a spurious re-emit) as a second alert.
+    this._bus.emit("signals:new", { signal: { ...signal, setupId: setup.id } });
+  }
+
+  /** Watching -> Expired: countdown elapsed or the trend reversed against the setup. */
+  _expire(machine, reason) {
+    const setup = machine.setup;
+    setup.state = EntryState.EXPIRED;
+    setup.expiredAt = Date.now();
+    setup.expireReason = reason;
+    machine.state = EntryState.EXPIRED;
+
+    this._pushHistory({ ...this._setupSnapshot(setup), outcome: reason === "trend_reversed" ? "invalidated" : "expired" });
+  }
+
+  /** Clears a resolved setup back to Idle so the next completed candle can be evaluated fresh. */
+  _resetToIdle(machine) {
+    if (machine.setup && machine.setup.state === EntryState.TRIGGERED) {
+      this._clearActiveSignal(machine.setup.id);
+    }
+    machine.state = EntryState.IDLE;
+    machine.setup = null;
+  }
+
+  /* ================= internal: shared app state I/O ================= */
+
+  /** Appends a newly-triggered signal to shared state's activeSignals list. */
+  _pushActiveSignal(signal) {
+    const current = this._state.get("activeSignals") || [];
+    this._state.set("activeSignals", [...current, signal]);
+  }
+
+  /** Removes a signal from activeSignals by its setup id (only writes state if something was actually removed). */
+  _clearActiveSignal(setupId) {
+    const current = this._state.get("activeSignals") || [];
+    const next = current.filter((s) => s.setupId !== setupId);
+    if (next.length !== current.length) this._state.set("activeSignals", next);
+  }
+
+  /** Prepends a resolved setup's record to signalHistory, bounded to the most recent 200 so a long session's history can't grow state (and its DOM list) without limit. */
+  _pushHistory(record) {
+    const current = this._state.get("signalHistory") || [];
+    // Bounded so a long-running session doesn't grow state (and its DOM
+    // list) without limit.
+    this._state.set("signalHistory", [{ ...record, recordedAt: Date.now() }, ...current].slice(0, 200));
+  }
+
+  /* ================= internal: pattern recognition + snapshots ================= */
+
+  /** Maps a TrendEngine bias label onto the one direction Entry Engine may act on. */
+  _directionFromBias(bias) {
+    if (bias === "Strong Bullish" || bias === "Bullish") return "bullish";
+    if (bias === "Strong Bearish" || bias === "Bearish") return "bearish";
+    return "mixed"; // Mixed (or unrecognized) -> ignore setups entirely
+  }
+
+  /** Bullish candle whose lower wick is (effectively) zero. */
+  _isNoLowerWickBullish(candle) {
+    if (candle.close <= candle.open) return false;
+    return this._passesWickCheck(candle, Math.abs(candle.low - candle.open));
+  }
+
+  /** Bearish candle whose upper wick is (effectively) zero. */
+  _isNoUpperWickBearish(candle) {
+    if (candle.close >= candle.open) return false;
+    return this._passesWickCheck(candle, Math.abs(candle.high - candle.open));
+  }
+
+  /** Routes to the tolerance formula selected in Settings > Strategy > Wick tolerance mode. */
+  _passesWickCheck(candle, wickSize) {
+    const mode = this._state.get("settings.wickToleranceMode");
+    return mode === "body"
+      ? wickSize <= this._wickToleranceBody(candle)
+      : wickSize <= this._wickTolerance(candle);
+  }
+
+  /** Small tolerance so float noise from the feed doesn't hide a real no-wick candle. Configurable via Settings > Strategy > Wick tolerance. */
+  _wickTolerance(candle) {
+    const raw = this._state.get("settings.wickTolerancePercent");
+    const pct = Number.isFinite(raw) && raw > 0 ? raw : 3;
+    const range = candle.high - candle.low;
+    return Math.max(range * (pct / 100), candle.close * 0.00005);
+  }
+
+  /**
+   * Body-relative alternative to _wickTolerance: allowed wick as a % of the
+   * candle's body size (|close - open|) rather than its high-low range. This
+   * scales with how strong the candle's move was instead of how wide the
+   * candle happened to print, so a small, indecisive candle with a
+   * proportionally tiny range no longer auto-qualifies as "no-wick" the way
+   * it can under the range-relative formula. Same noise floor as
+   * _wickTolerance applies, since a live feed practically never prints an
+   * exact zero-wick candle. Configurable via Settings > Strategy > Wick
+   * tolerance mode / Wick tolerance (body).
+   */
+  _wickToleranceBody(candle) {
+    const raw = this._state.get("settings.wickToleranceBodyPercent");
+    const pct = Number.isFinite(raw) && raw > 0 ? raw : 15;
+    const body = Math.abs(candle.close - candle.open);
+    return Math.max(body * (pct / 100), candle.close * 0.00005);
+  }
+
+  /** How many completed candles a fresh Watching setup stays alive for. Configurable via Settings > Strategy > Countdown length. */
+  _countdownLength() {
+    const raw = this._state.get("settings.countdownLength");
+    return Number.isFinite(raw) && raw > 0 ? raw : this._RETEST_LOOKBACK;
+  }
+
+  /** Plain-object OHLC copy of a candle, safe to store on a setup/signal without retaining a reference into the live stream buffer. */
+  _candleSnapshot(candle) {
+    return { epoch: candle.epoch, open: candle.open, high: candle.high, low: candle.low, close: candle.close };
+  }
+
+  /** The "each setup stores" contract: Symbol, Direction, Trend, Trend Score, Timeframe, Countdown, Detection Time, Entry Level (+ current state). */
+  _setupSnapshot(setup) {
+    return {
+      id: setup.id,
+      symbol: setup.symbol,
+      direction: setup.directionLabel,
+      trend: setup.trend,
+      trendScore: setup.trendScore,
+      trendTimeframe: setup.trendTimeframe,
+      timeframe: setup.timeframe,
+      countdown: setup.countdown,
+      detectionTime: setup.detectionTime,
+      entryLevel: setup.level,
+      state: setup.state
+    };
+  }
+
+  /** Builds evaluate()'s public return shape from a machine's current state - the signal payload is only populated when that machine is presently Triggered. */
+  _toResult(machine, status) {
+    const setup = machine.setup;
+    const triggered = machine.state === EntryState.TRIGGERED && setup;
+    return {
+      status,
+      state: machine.state, // Idle | Watching | Triggered | Expired
+      hasSignal: !!triggered,
+      signal: triggered ? {
+        symbol: setup.symbol, symbolId: setup.symbol, timeframe: setup.timeframe,
+        direction: setup.directionLabel, strategy: "no-wick", level: setup.level,
+        pattern: setup.pattern, retest: setup.retest, trendBias: setup.trend,
+        trendScore: setup.trendScore, countdown: setup.countdown,
+        detectionTime: setup.detectionTime, generatedAt: setup.triggeredAt
+      } : null,
+      setup: setup ? this._setupSnapshot(setup) : null
+    };
+  }
+}
+
+
+/* ============================================================================
+   SCANNER MANAGER
+   ----------------------------------------------------------------------------
+   Orchestrates the pipeline: DataFeedManager -> TrendEngine ->
+   TrendScoreCalculator -> EntryEngine, on an interval, for every watched
+   symbol. Even though the analytical modules are placeholders, this class
+   defines the real control flow later phases will plug real logic into
+   without any structural changes.
+   ==========================================================================*/
+class ScannerManager {
+  /**
+   * @param {object} deps
+   * @param {EventBus} deps.eventBus
+   * @param {StateManager} deps.stateManager
+   * @param {DataFeedManager} deps.dataFeed
+   * @param {TrendEngine} deps.trendEngine
+   * @param {TrendScoreCalculator} deps.scoreCalculator
+   * @param {EntryEngine} deps.entryEngine
+   * @param {SettingsManager} deps.settingsManager
+   */
+  constructor({ eventBus, stateManager, dataFeed, trendEngine, scoreCalculator, entryEngine, settingsManager }) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._dataFeed = dataFeed;
+    this._trendEngine = trendEngine;
+    this._scoreCalculator = scoreCalculator;
+    this._entryEngine = entryEngine;
+    this._settings = settingsManager;
+    this._timer = null;
+  }
+
+  /** Current scanner status string ("idle" | "running"). */
+  getStatus() { return this._state.get("scanner.status"); }
+
+  /** Starts the scan loop: runs one cycle immediately, then re-runs on the user-configured interval (default 2s) until stop() is called. No-op if already running. */
+  start() {
+    if (this.getStatus() === "running") return;
+    this._state.set("scanner.status", "running");
+    this._bus.emit("scanner:status", { status: "running" });
+    this._tick(); // run immediately, then on interval
+    const intervalMs = this._settings.get("scanIntervalMs") || 2000;
+    this._timer = window.setInterval(() => this._tick(), intervalMs);
+  }
+
+  /** Stops the scan loop's interval timer, if running, and marks the scanner idle. */
+  stop() {
+    if (this._timer) { window.clearInterval(this._timer); this._timer = null; }
+    this._state.set("scanner.status", "idle");
+    this._bus.emit("scanner:status", { status: "idle" });
+  }
+
+  /** Applies a changed scan-interval setting by restarting the loop (only if it was already running) so the new interval takes effect immediately. */
+  restartWithNewInterval() {
+    const wasRunning = this.getStatus() === "running";
+    this.stop();
+    if (wasRunning) this.start();
+  }
+
+  /** Runs a single scan cycle on demand, independent of the interval timer (e.g. a manual "refresh now" action). */
+  scanOnce() { this._tick(); }
+
+  /**
+   * Runs one full scan cycle: for every watched symbol, pulls the latest
+   * price, asks TrendEngine for bias, adapts it into a score via
+   * TrendScoreCalculator, and advances the Entry Engine's state machine -
+   * then publishes the combined row to shared state and the event bus.
+   *
+   * Settings that are the same for every symbol in this cycle (the
+   * timeframe list and the resolved "primary" trend timeframe) are read
+   * once up front rather than being re-read and re-resolved inside the
+   * per-symbol loop, since their value can't differ symbol to symbol.
+   */
+  _tick() {
+    const startedAt = performance.now();
+    this._bus.emit("scanner:cycle-start", {});
+
+    const watchlist = this._state.get("watchlist") || [];
+
+    // Trend Engine is timeframe-scoped and fully independent of the Entry
+    // Engine; the scanner drives the bias column off the user-configured
+    // trend timeframe, falling back to the first streamed candle
+    // timeframe if that setting is somehow missing/invalid. Resolved once
+    // per cycle - every watched symbol uses the same primaryTimeframe.
+    const timeframes = this._settings.get("timeframes") || Config.DEFAULT_SETTINGS.timeframes;
+    const configuredTrendTf = this._settings.get("trendTimeframe");
+    const primaryTimeframe = (configuredTrendTf && timeframes.includes(configuredTrendTf))
+      ? configuredTrendTf
+      : (timeframes[0] || Config.TIMEFRAMES[0].id);
+
+    // Entry (pattern + retest) is resolved independently of trend bias -
+    // trend determines direction only, entry logic always runs on its own
+    // configured timeframe (falls back to the trend timeframe, then the
+    // first streamed timeframe, if unset/invalid). Resolved once per cycle,
+    // same as primaryTimeframe above.
+    const configuredEntryTf = this._settings.get("entryTimeframe");
+    const entryTimeframe = (configuredEntryTf && timeframes.includes(configuredEntryTf))
+      ? configuredEntryTf
+      : primaryTimeframe;
+
+    let scanned = 0;
+
+    for (const symbolId of watchlist) {
+      const meta = Config.SYMBOL_MAP.get(symbolId);
+      if (!meta) continue;
+
+      const latestTick = { symbolId, price: this._dataFeed.getLatestPrice(symbolId), timestamp: Date.now() };
+      const trendResult = this._trendEngine.getTrend(symbolId, primaryTimeframe);
+      const scoreResult = this._scoreCalculator.calculateScore(trendResult);
+      // Entry Engine independently calls TrendEngine.getTrend itself (its
+      // only allowed analytical input) - it isn't handed trendResult here.
+      // (TrendEngine internally memoizes on unchanged candle data, so this
+      // second call is cheap rather than a full duplicate computation.)
+      // Pattern/retest detection runs on entryTimeframe; the bias it's
+      // gated on is still read from primaryTimeframe (trend timeframe) -
+      // the two are allowed to differ (see Config.DEFAULT_SETTINGS).
+      const entryResult = this._entryEngine.evaluate(symbolId, entryTimeframe, primaryTimeframe);
+
+      const row = {
+        symbolId,
+        name: meta.name,
+        category: meta.category,
+        price: latestTick.price,
+        trend: trendResult,
+        score: scoreResult,
+        entry: entryResult,
+        updatedAt: Date.now()
+      };
+
+      this._state.set(`symbols.${symbolId}`, row);
+      this._bus.emit("scanner:symbol-updated", { symbolId, row });
+      scanned++;
+    }
+
+    this._state.set("scanner.scannedCount", scanned);
+    this._state.set("scanner.totalCount", watchlist.length);
+    this._state.set("scanner.lastCycleAt", Date.now());
+
+    const durationMs = Math.round(performance.now() - startedAt);
+    this._bus.emit("scanner:cycle-complete", { scannedCount: scanned, totalCount: watchlist.length, durationMs });
+  }
+}
+
+
+/* ============================================================================
+   ALERTS MANAGER
+   ----------------------------------------------------------------------------
+   Delivers every user-facing reaction to a triggered entry signal: a short
+   notification sound, a toast popup, an optional desktop notification, and
+   an "alerts:row-highlight" event so DashboardUI can flash the matching row
+   in whichever tables currently render that symbol. Signal History itself is
+   written by EntryEngine at the moment of trigger (see _pushHistory in
+   EntryEngine) - this class only reacts to the "signals:new" event already
+   emitted alongside that write, so the two never drift out of sync.
+
+   Duplicate protection: each triggered setup carries a stable id
+   (`${symbol}::${timeframe}::${patternCandleEpoch}`, see EntryEngine._key /
+   setup.id). AlertsManager remembers every id it has already alerted on for
+   this session and silently ignores a repeat "signals:new" for the same id,
+   so a re-emitted or re-delivered event never produces a second sound/popup/
+   highlight for the same trigger.
+   ==========================================================================*/
+class AlertsManager {
+  constructor(eventBus, stateManager, settingsManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._settings = settingsManager;
+    this._toastContainer = null;
+    this._audioCtx = null;
+
+    // Bounded de-dupe set: remembers setup ids already alerted on so a
+    // repeat "signals:new" for the same trigger never fires twice. Capped
+    // so a very long-running session can't grow this without limit.
+    this._alertedSetupIds = new Set();
+    this._MAX_ALERTED_IDS = 500;
+  }
+
+  init() {
+    this._toastContainer = Utils.qs("#toast-container");
+    this._bus.on("signals:new", ({ signal }) => this._handleNewSignal(signal));
+    this._bus.on("alerts:toast", ({ type, title, message }) => this.showToast(type, title, message));
+  }
+
+  _handleNewSignal(signal) {
+    if (this._isDuplicate(signal)) return;
+
+    const alerts = this._settings.get("alerts") || {};
+    const title = `${signal.direction} signal — ${signal.symbolId}`;
+    const message = `${signal.timeframe} · entry ${Utils.formatPrice(signal.level)} · trend ${signal.trendBias || "—"} (${signal.trendScore ?? "—"})`;
+
+    if (alerts.toast) this.showToast("success", title, message);
+    if (alerts.sound) this._playSound(this._settings.get("notificationSound") || "chime");
+    if (alerts.desktop) this._showDesktopNotification(title, message);
+
+    // Row highlight fires regardless of the toast/sound/desktop toggles -
+    // it's a visual cue on data already on screen, not a separate channel
+    // the user opted into.
+    this._bus.emit("alerts:row-highlight", { symbolId: signal.symbolId });
+  }
+
+  /** True if this exact triggered setup has already produced an alert. */
+  _isDuplicate(signal) {
+    const setupId = signal && signal.setupId;
+    if (!setupId) return false; // no id to dedupe against - fail open, never suppress
+    if (this._alertedSetupIds.has(setupId)) return true;
+    this._alertedSetupIds.add(setupId);
+    if (this._alertedSetupIds.size > this._MAX_ALERTED_IDS) {
+      const oldest = this._alertedSetupIds.values().next().value;
+      this._alertedSetupIds.delete(oldest);
+    }
+    return false;
+  }
+
+  showToast(type, title, message) {
+    if (!this._toastContainer) return;
+    const toast = Utils.el("div", { class: `toast toast-${type || "info"}` }, [
+      Utils.el("div", { class: "toast-title" }, [title]),
+      message ? Utils.el("div", { class: "toast-desc" }, [message]) : null
+    ]);
+    this._toastContainer.appendChild(toast);
+    window.setTimeout(() => { toast.remove(); }, 4500);
+  }
+
+  // Per-sound WebAudio "recipes" - no external assets, works offline. Each
+  // note is {freq, offset} relative to playback start, all sine-wave beeps.
+  static get SOUND_RECIPES() {
+    return {
+      chime: [{ freq: 880, offset: 0 }, { freq: 1320, offset: 0.14 }],
+      ping: [{ freq: 1046, offset: 0 }],
+      alarm: [{ freq: 660, offset: 0 }, { freq: 660, offset: 0.16 }, { freq: 660, offset: 0.32 }],
+      none: []
+    };
+  }
+
+  /** Plays the named notification sound (see SOUND_RECIPES). "none" is a silent no-op. */
+  _playSound(soundId) {
+    const recipe = AlertsManager.SOUND_RECIPES[soundId] || AlertsManager.SOUND_RECIPES.chime;
+    if (!recipe.length) return;
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      if (!this._audioCtx) this._audioCtx = new Ctx();
+      const ctx = this._audioCtx;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+
+      const now = ctx.currentTime;
+      recipe.forEach(({ freq, offset }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        const start = now + offset;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.25, start + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.13);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 0.14);
+      });
+    } catch (err) {
+      console.error("[AlertsManager] failed to play alert sound:", err);
+    }
+  }
+
+  _showDesktopNotification(title, body) {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      new Notification(title, { body });
+    } else if (Notification.permission !== "denied") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }
+}
+
+
+/* ============================================================================
+   SETTINGS MANAGER
+   ----------------------------------------------------------------------------
+   Loads/saves user settings (persisted via localStorage since this app runs
+   as a standalone file in the user's own browser). Falls back gracefully to
+   in-memory defaults if storage is unavailable (e.g. file:// restrictions).
+   ==========================================================================*/
+class SettingsManager {
+  constructor(eventBus, stateManager) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._settings = JSON.parse(JSON.stringify(Config.DEFAULT_SETTINGS));
+  }
+
+  init() {
+    this._settings = this._load();
+    this._state.set("settings", this._settings);
+    this._state.set("watchlist", this._settings.watchlist.slice());
+  }
+
+  get(key) { return key ? Utils.getPath(this._settings, key) : this._settings; }
+
+  getAll() { return JSON.parse(JSON.stringify(this._settings)); }
+
+  update(partial) {
+    this._settings = Utils.deepMerge(this._settings, partial);
+    this._persist();
+    this._state.set("settings", this._settings);
+    this._bus.emit("settings:changed", { settings: this.getAll() });
+  }
+
+  resetToDefaults() {
+    this._settings = JSON.parse(JSON.stringify(Config.DEFAULT_SETTINGS));
+    this._persist();
+    this._state.set("settings", this._settings);
+    this._state.set("watchlist", this._settings.watchlist.slice());
+    this._bus.emit("settings:changed", { settings: this.getAll() });
+  }
+
+  _load() {
+    try {
+      const raw = window.localStorage.getItem(Config.STORAGE_KEY);
+      if (!raw) return JSON.parse(JSON.stringify(Config.DEFAULT_SETTINGS));
+      const parsed = JSON.parse(raw);
+      return Utils.deepMerge(Config.DEFAULT_SETTINGS, parsed);
+    } catch (err) {
+      console.warn("[SettingsManager] falling back to defaults:", err);
+      return JSON.parse(JSON.stringify(Config.DEFAULT_SETTINGS));
+    }
+  }
+
+  _persist() {
+    try {
+      window.localStorage.setItem(Config.STORAGE_KEY, JSON.stringify(this._settings));
+    } catch (err) {
+      console.warn("[SettingsManager] could not persist settings:", err);
+    }
+  }
+}
+
+
+/* ============================================================================
+   DASHBOARD UI
+   ----------------------------------------------------------------------------
+   Owns all DOM rendering and event wiring. Subscribes to StateManager so it
+   never needs to be told to refresh - it reacts to state changes emitted by
+   every other module.
+   ==========================================================================*/
+class DashboardUI {
+  constructor({ eventBus, stateManager, settingsManager, dataFeed, scannerManager, alertsManager }) {
+    this._bus = eventBus;
+    this._state = stateManager;
+    this._settings = settingsManager;
+    this._dataFeed = dataFeed;
+    this._scanner = scannerManager;
+    this._alerts = alertsManager;
+    this._dom = {};
+
+    // symbolId -> cell/badge element refs, populated on full table rebuilds
+    // (_renderSymbolTable / _renderWatchingPanel) and consumed by the
+    // granular per-row updaters (_updateSymbolRow / _updateWatchingRow) so a
+    // live tick patches exactly the cells that changed instead of tearing
+    // down and rebuilding a table on every scan cycle.
+    this._symbolRowEls = new Map();
+    this._watchingRowEls = new Map();
+  }
+
+  init() {
+    this._cacheDom();
+    this._bindStaticEvents();
+    this._populateCategoryFilter();
+    this._populateSettingsSymbolCheckboxes();
+    this._populateTimeframeCheckboxes();
+    this._syncSettingsForm();
+    const s = this._settings.getAll();
+    this._applyDisplaySettings(s.display && s.display.compactRows, s.theme);
+    this._renderSymbolTable();
+    this._renderWatchingPanel();
+    this._renderActiveSignals();
+    this._renderSignalHistory();
+    this._subscribeToState();
+    this._startClock();
+  }
+
+  _cacheDom() {
+    const $ = Utils.qs;
+    this._dom = {
+      app: $("#app"),
+      sidebar: $("#sidebar"),
+      sidebarToggle: $("#sidebar-toggle"),
+      navItems: Utils.qsa(".nav-item[data-panel]"),
+      panels: Utils.qsa(".panel[data-panel]"),
+      settingsToggle: $("#settings-toggle"),
+      settingsOverlay: $("#settings-overlay"),
+      settingsDrawer: $("#settings-drawer"),
+      settingsCloseBtn: $("#settings-close-btn"),
+      settingsSaveBtn: $("#settings-save-btn"),
+      settingsResetBtn: $("#settings-reset-btn"),
+      connIndicator: $("#connection-indicator"),
+      connLabel: $("#conn-label"),
+      headerClock: $("#header-clock"),
+
+      categoryFilter: $("#category-filter"),
+      symbolSearch: $("#symbol-search"),
+      symbolTableBody: $("#symbol-table-body"),
+      scannerCountPill: $("#scanner-count-pill"),
+      scannerToggleBtn: $("#scanner-toggle-btn"),
+      scannerToggleLabel: $("#scanner-toggle-label"),
+
+      watchingBody: $("#watching-panel-body"),
+      watchingCountPill: $("#watching-count-pill"),
+
+      signalsBody: $("#signals-panel-body"),
+      signalsCountPill: $("#signals-count-pill"),
+
+      historyBody: $("#history-panel-body"),
+      historyCountPill: $("#history-count-pill"),
+      historyClearBtn: $("#history-clear-btn"),
+
+      badgeScanner: $("#badge-scanner"),
+      badgeWatching: $("#badge-watching"),
+      badgeSignals: $("#badge-signals"),
+      badgeHistory: $("#badge-history"),
+
+      statusFeedText: $("#status-feed-text"),
+      statusFeedItem: $("#status-feed"),
+      statusScannerText: $("#status-scanner-text"),
+      statusScannerItem: $("#status-scanner"),
+      statusScannedText: $("#status-scanned-text"),
+      statusLatencyText: $("#status-latency-text"),
+      statusLastUpdateText: $("#status-lastupdate-text"),
+
+      settingScanInterval: $("#setting-scan-interval"),
+      settingAutoStart: $("#setting-auto-start"),
+      settingTrendTimeframe: $("#setting-trend-timeframe"),
+      settingEntryTimeframe: $("#setting-entry-timeframe"),
+      settingWickToleranceMode: $("#setting-wick-tolerance-mode"),
+      settingWickTolerance: $("#setting-wick-tolerance"),
+      settingWickToleranceBody: $("#setting-wick-tolerance-body"),
+      fieldRowWickToleranceRange: $("#field-row-wick-tolerance-range"),
+      fieldRowWickToleranceBody: $("#field-row-wick-tolerance-body"),
+      settingCountdownLength: $("#setting-countdown-length"),
+      settingAlertSound: $("#setting-alert-sound"),
+      settingNotificationSound: $("#setting-notification-sound"),
+      settingAlertDesktop: $("#setting-alert-desktop"),
+      settingAlertToast: $("#setting-alert-toast"),
+      settingCompactRows: $("#setting-compact-rows"),
+      settingTheme: $("#setting-theme"),
+      settingFeedMode: $("#setting-feed-mode"),
+      settingAutoReconnect: $("#setting-auto-reconnect"),
+      settingsSymbolCheckboxes: $("#settings-symbol-checkboxes"),
+      settingsTimeframeCheckboxes: $("#settings-timeframe-checkboxes"),
+      watchlistSelectVolatility: $("#watchlist-select-volatility"),
+      watchlistSelectAll: $("#watchlist-select-all"),
+      watchlistClear: $("#watchlist-clear")
+    };
+  }
+
+  _bindStaticEvents() {
+    const d = this._dom;
+
+    d.sidebarToggle.addEventListener("click", () => this._toggleSidebar());
+
+    d.navItems.forEach((btn) => {
+      btn.addEventListener("click", () => this._setActivePanel(btn.dataset.panel));
+    });
+    Utils.qsa('[data-action="open-settings"]').forEach((btn) => btn.addEventListener("click", () => this._openSettings()));
+
+    d.settingsToggle.addEventListener("click", () => this._openSettings());
+    d.settingsCloseBtn.addEventListener("click", () => this._closeSettings());
+    d.settingsOverlay.addEventListener("click", () => this._closeSettings());
+    d.settingsSaveBtn.addEventListener("click", () => this._saveSettingsForm());
+    d.settingWickToleranceMode.addEventListener("change", () => this._applyWickToleranceModeVisibility());
+    d.settingsResetBtn.addEventListener("click", () => {
+      this._settings.resetToDefaults();
+      this._syncSettingsForm();
+      this._populateSettingsSymbolCheckboxes();
+      this._populateTimeframeCheckboxes();
+      this._dataFeed.setTimeframes(this._settings.get("timeframes"));
+      const s = this._settings.getAll();
+      this._applyDisplaySettings(s.display && s.display.compactRows, s.theme);
+      this._scanner.restartWithNewInterval();
+      this._bus.emit("alerts:toast", { type: "info", title: "Settings reset", message: "Defaults restored." });
+    });
+
+    d.watchlistSelectVolatility.addEventListener("click", () => this._setWatchlist(Config.VOLATILITY_SYMBOLS));
+    d.watchlistSelectAll.addEventListener("click", () => this._setWatchlist(Config.SYMBOLS.map((s) => s.id)));
+    d.watchlistClear.addEventListener("click", () => this._setWatchlist([]));
+
+    d.categoryFilter.addEventListener("change", () => this._renderSymbolTable());
+    d.symbolSearch.addEventListener("input", Utils.debounce(() => this._renderSymbolTable(), 150));
+
+    d.scannerToggleBtn.addEventListener("click", () => {
+      if (this._scanner.getStatus() === "running") this._scanner.stop();
+      else this._scanner.start();
+    });
+
+    d.historyClearBtn.addEventListener("click", () => {
+      this._state.set("signalHistory", []);
+      this._bus.emit("alerts:toast", { type: "info", title: "History cleared" });
+    });
+
+    window.addEventListener("resize", Utils.debounce(() => this._handleResize(), 120));
+  }
+
+  _subscribeToState() {
+    this._state.subscribe("connection.status", ({ value }) => this._updateConnectionIndicator(value));
+    this._state.subscribe("connection.latency", ({ value }) => { this._dom.statusLatencyText.textContent = `Latency: ${value === null ? "--" : value + " ms"}`; });
+    this._state.subscribe("connection.lastMessageAt", ({ value }) => { this._dom.statusLastUpdateText.textContent = `Last update: ${Utils.formatTime(value)}`; });
+
+    this._state.subscribe("scanner.status", ({ value }) => this._updateScannerStatus(value));
+    this._state.subscribe("scanner.scannedCount", () => this._updateScannedCounter());
+    this._state.subscribe("scanner.totalCount", () => this._updateScannedCounter());
+
+    // Structural changes (symbols added/removed from the watchlist) are the
+    // only thing that should rebuild these tables from scratch.
+    this._state.subscribe("watchlist", () => { this._renderSymbolTable(); this._renderWatchingPanel(); this._populateSettingsSymbolCheckboxes(); });
+    this._state.subscribe("activeSignals", () => this._renderActiveSignals());
+    this._state.subscribe("signalHistory", () => this._renderSignalHistory());
+
+    // Every live scan tick (per symbol, per cycle) patches only the cells
+    // that changed in whichever tables currently render that symbol - no
+    // table teardown/rebuild on the hot path.
+    this._bus.on("scanner:symbol-updated", ({ symbolId, row }) => {
+      this._updateSymbolRow(symbolId, row);
+      this._updateWatchingRow(symbolId, row);
+    });
+
+    // AlertsManager fires this the moment a setup triggers - flash whichever
+    // rendered rows (Scanner table and/or Watching panel) belong to that symbol.
+    this._bus.on("alerts:row-highlight", ({ symbolId }) => this._flashRow(symbolId));
+  }
+
+  /* ---------- panel / sidebar / settings ---------- */
+
+  _toggleSidebar() {
+    const isMobile = window.innerWidth <= 900;
+    if (isMobile) { this._dom.sidebar.classList.toggle("is-mobile-open"); return; }
+    const collapsed = this._dom.sidebar.classList.toggle("is-collapsed");
+    this._state.set("ui.sidebarCollapsed", collapsed);
+  }
+
+  _handleResize() {
+    if (window.innerWidth > 900) this._dom.sidebar.classList.remove("is-mobile-open");
+  }
+
+  _setActivePanel(panelName) {
+    this._dom.navItems.forEach((btn) => btn.classList.toggle("is-active", btn.dataset.panel === panelName));
+    this._dom.panels.forEach((panel) => { panel.hidden = panel.dataset.panel !== panelName; });
+    this._state.set("ui.activePanel", panelName);
+    this._bus.emit("ui:panel-changed", { panel: panelName });
+    if (window.innerWidth <= 900) this._dom.sidebar.classList.remove("is-mobile-open");
+  }
+
+  _openSettings() {
+    this._dom.settingsDrawer.hidden = false;
+    this._dom.settingsOverlay.classList.add("is-open");
+    requestAnimationFrame(() => this._dom.settingsDrawer.classList.add("is-open"));
+    this._state.set("ui.settingsOpen", true);
+  }
+
+  _closeSettings() {
+    this._dom.settingsDrawer.classList.remove("is-open");
+    this._dom.settingsOverlay.classList.remove("is-open");
+    this._state.set("ui.settingsOpen", false);
+    window.setTimeout(() => { if (!this._dom.settingsDrawer.classList.contains("is-open")) this._dom.settingsDrawer.hidden = true; }, 220);
+  }
+
+  /* ---------- settings form ---------- */
+
+  _populateCategoryFilter() {
+    const select = this._dom.categoryFilter;
+    Config.CATEGORIES.forEach((cat) => {
+      const opt = Utils.el("option", { value: cat }, [cat]);
+      select.appendChild(opt);
+    });
+  }
+
+  _populateSettingsSymbolCheckboxes() {
+    const container = this._dom.settingsSymbolCheckboxes;
+    const watchlist = new Set(this._state.get("watchlist") || []);
+    container.innerHTML = "";
+    Config.SYMBOLS.forEach((sym) => {
+      const id = `wl-${sym.id}`;
+      const label = Utils.el("label", { class: "checkbox-item", for: id }, [
+        Utils.el("input", { type: "checkbox", id, dataset: { symbolId: sym.id }, ...(watchlist.has(sym.id) ? { checked: "checked" } : {}) }),
+        sym.name
+      ]);
+      const input = label.querySelector("input");
+      input.checked = watchlist.has(sym.id);
+      input.addEventListener("change", () => this._toggleWatch(sym.id, input.checked));
+      container.appendChild(label);
+    });
+  }
+
+  _populateTimeframeCheckboxes() {
+    const container = this._dom.settingsTimeframeCheckboxes;
+    const active = new Set(this._settings.get("timeframes") || Config.DEFAULT_SETTINGS.timeframes);
+    container.innerHTML = "";
+    Config.TIMEFRAMES.forEach((tf) => {
+      const id = `tf-${tf.id}`;
+      const label = Utils.el("label", { class: "checkbox-item", for: id }, [
+        Utils.el("input", { type: "checkbox", id, dataset: { timeframe: tf.id }, ...(active.has(tf.id) ? { checked: "checked" } : {}) }),
+        tf.label
+      ]);
+      container.appendChild(label);
+    });
+  }
+
+  /** Shows only the field row matching the currently selected wick tolerance mode. */
+  _applyWickToleranceModeVisibility() {
+    const isBody = this._dom.settingWickToleranceMode.value === "body";
+    this._dom.fieldRowWickToleranceRange.hidden = isBody;
+    this._dom.fieldRowWickToleranceBody.hidden = !isBody;
+  }
+
+  _syncSettingsForm() {
+    const s = this._settings.getAll();
+    this._dom.settingScanInterval.value = String(s.scanIntervalMs);
+    this._dom.settingAutoStart.checked = !!s.autoStartScanner;
+    this._dom.settingTrendTimeframe.value = s.trendTimeframe || Config.DEFAULT_SETTINGS.trendTimeframe;
+    this._dom.settingEntryTimeframe.value = s.entryTimeframe || Config.DEFAULT_SETTINGS.entryTimeframe;
+    this._dom.settingWickToleranceMode.value = s.wickToleranceMode || Config.DEFAULT_SETTINGS.wickToleranceMode;
+    this._dom.settingWickTolerance.value = String(s.wickTolerancePercent || Config.DEFAULT_SETTINGS.wickTolerancePercent);
+    this._dom.settingWickToleranceBody.value = String(s.wickToleranceBodyPercent || Config.DEFAULT_SETTINGS.wickToleranceBodyPercent);
+    this._applyWickToleranceModeVisibility();
+    this._dom.settingCountdownLength.value = String(s.countdownLength || Config.DEFAULT_SETTINGS.countdownLength);
+    this._dom.settingAlertSound.checked = !!s.alerts.sound;
+    this._dom.settingNotificationSound.value = s.notificationSound || Config.DEFAULT_SETTINGS.notificationSound;
+    this._dom.settingAlertDesktop.checked = !!s.alerts.desktop;
+    this._dom.settingAlertToast.checked = !!s.alerts.toast;
+    this._dom.settingCompactRows.checked = !!s.display.compactRows;
+    this._dom.settingTheme.value = s.theme || Config.DEFAULT_SETTINGS.theme;
+    this._dom.settingFeedMode.value = s.feedMode;
+    this._dom.settingAutoReconnect.checked = s.autoReconnect !== false;
+  }
+
+  _saveSettingsForm() {
+    const d = this._dom;
+    const selectedTimeframes = Utils.qsa("input[data-timeframe]", d.settingsTimeframeCheckboxes)
+      .filter((el) => el.checked)
+      .map((el) => el.dataset.timeframe);
+    // At least one timeframe must remain active - a symbol with zero
+    // timeframes would also have no "live price" source (see
+    // DataFeedManager._updateLatestPriceFromStream).
+    const timeframes = selectedTimeframes.length ? selectedTimeframes : Config.DEFAULT_SETTINGS.timeframes.slice();
+
+    // Numeric fields fall back to their last-known-good value (rather than
+    // persisting NaN) whenever the input is empty, non-numeric, or <= 0 -
+    // otherwise a stray bad entry would save as NaN, get echoed back into
+    // the input as the literal text "NaN" on next open, and silently break
+    // every downstream consumer of that setting.
+    const num = (raw, fallback) => {
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+
+    // If the chosen trend timeframe was just deselected from the active
+    // timeframe list, fall back to the first remaining one so the settings
+    // form and persisted state don't quietly disagree with what
+    // ScannerManager will actually resolve at scan time.
+    const trendTimeframe = timeframes.includes(d.settingTrendTimeframe.value)
+      ? d.settingTrendTimeframe.value
+      : timeframes[0];
+    // Same "deselected from active list" fallback as trendTimeframe above,
+    // resolved independently - entry timeframe is allowed to differ from
+    // trend timeframe on purpose (see Config.DEFAULT_SETTINGS comment).
+    const entryTimeframe = timeframes.includes(d.settingEntryTimeframe.value)
+      ? d.settingEntryTimeframe.value
+      : timeframes[0];
+
+    this._settings.update({
+      scanIntervalMs: num(d.settingScanInterval.value, this._settings.get("scanIntervalMs")),
+      autoStartScanner: d.settingAutoStart.checked,
+      timeframes,
+      trendTimeframe,
+      entryTimeframe,
+      wickToleranceMode: d.settingWickToleranceMode.value === "body" ? "body" : "range",
+      wickTolerancePercent: num(d.settingWickTolerance.value, this._settings.get("wickTolerancePercent")),
+      wickToleranceBodyPercent: num(d.settingWickToleranceBody.value, this._settings.get("wickToleranceBodyPercent")),
+      countdownLength: num(d.settingCountdownLength.value, this._settings.get("countdownLength")),
+      alerts: {
+        sound: d.settingAlertSound.checked,
+        desktop: d.settingAlertDesktop.checked,
+        toast: d.settingAlertToast.checked
+      },
+      notificationSound: d.settingNotificationSound.value,
+      display: { compactRows: d.settingCompactRows.checked },
+      theme: d.settingTheme.value,
+      feedMode: d.settingFeedMode.value,
+      autoReconnect: d.settingAutoReconnect.checked
+    });
+    this._dataFeed.setTimeframes(timeframes);
+    this._scanner.restartWithNewInterval();
+    this._applyDisplaySettings(d.settingCompactRows.checked, d.settingTheme.value);
+    this._bus.emit("alerts:toast", { type: "success", title: "Settings saved" });
+    this._closeSettings();
+  }
+
+  /** Applies theme + compact-rows immediately - called on save and on init so a reload doesn't lose them. */
+  _applyDisplaySettings(compactRows, theme) {
+    document.body.classList.toggle("compact-rows", !!compactRows);
+    document.documentElement.setAttribute("data-theme", theme === "light" ? "light" : "dark");
+  }
+
+  _toggleWatch(symbolId, isWatched) {
+    const current = new Set(this._state.get("watchlist") || []);
+    if (isWatched) current.add(symbolId); else current.delete(symbolId);
+    const next = Array.from(current);
+    this._state.set("watchlist", next);
+    this._settings.update({ watchlist: next });
+  }
+
+  _setWatchlist(symbolIds) {
+    // Backs the "All Volatility" / "All Symbols" / "Clear" quick actions -
+    // lets the user select one, multiple, or all symbols in a single click
+    // instead of ticking each checkbox individually.
+    const next = Array.from(new Set(symbolIds));
+    this._state.set("watchlist", next);
+    this._settings.update({ watchlist: next });
+    this._bus.emit("alerts:toast", {
+      type: "info",
+      title: "Watchlist updated",
+      message: next.length ? `${next.length} symbol${next.length === 1 ? "" : "s"} selected` : "Watchlist cleared"
+    });
+  }
+
+  /* ---------- connection / scanner status ---------- */
+
+  _updateConnectionIndicator(status) {
+    const labels = { idle: "Disconnected", connecting: "Connecting…", connected: "Connected", disconnected: "Disconnected", error: "Connection error" };
+    this._dom.connIndicator.dataset.status = status;
+    this._dom.connLabel.textContent = labels[status] || status;
+    this._dom.statusFeedText.textContent = `Feed: ${(labels[status] || status).toLowerCase()}`;
+    this._dom.statusFeedItem.classList.toggle("is-live", status === "connected");
+    this._dom.statusFeedItem.classList.toggle("is-warn", status === "connecting");
+  }
+
+  _updateScannerStatus(status) {
+    this._dom.statusScannerText.textContent = `Scanner: ${status}`;
+    this._dom.statusScannerItem.classList.toggle("is-live", status === "running");
+    this._dom.scannerToggleBtn.dataset.state = status === "running" ? "running" : "stopped";
+    this._dom.scannerToggleLabel.textContent = status === "running" ? "Stop Scanner" : "Start Scanner";
+  }
+
+  _updateScannedCounter() {
+    const scanned = this._state.get("scanner.scannedCount") || 0;
+    const total = this._state.get("scanner.totalCount") || 0;
+    this._dom.statusScannedText.textContent = `Scanned: ${scanned}/${total}`;
+  }
+
+  /* ---------- symbol table ---------- */
+
+  _renderSymbolTable() {
+    const tbody = this._dom.symbolTableBody;
+    const symbolsState = this._state.get("symbols") || {};
+    const watchlist = new Set(this._state.get("watchlist") || []);
+    const query = (this._dom.symbolSearch.value || "").trim().toLowerCase();
+    const category = this._dom.categoryFilter.value;
+
+    const rows = Config.SYMBOLS.filter((sym) => {
+      if (category !== "all" && sym.category !== category) return false;
+      if (query && !sym.name.toLowerCase().includes(query) && !sym.id.toLowerCase().includes(query)) return false;
+      return true;
+    });
+
+    tbody.innerHTML = "";
+    this._symbolRowEls.clear();
+    rows.forEach((sym) => {
+      const row = symbolsState[sym.id];
+      tbody.appendChild(this._buildSymbolRow(sym, row, watchlist.has(sym.id)));
+    });
+
+    this._dom.scannerCountPill.textContent = `${rows.length} symbol${rows.length === 1 ? "" : "s"}`;
+    this._dom.badgeScanner.textContent = String(Config.SYMBOLS.length);
+  }
+
+  _buildSymbolRow(sym, row, isWatched) {
+    const tr = Utils.el("tr", { dataset: { symbolId: sym.id } });
+
+    const starBtn = Utils.el("button", {
+      class: `star-btn${isWatched ? " is-active" : ""}`,
+      "aria-label": isWatched ? "Unwatch symbol" : "Watch symbol",
+      onclick: () => this._toggleWatch(sym.id, !isWatched)
+    }, [this._starIcon()]);
+    tr.appendChild(Utils.el("td", {}, [starBtn]));
+
+    tr.appendChild(Utils.el("td", {}, [Utils.el("div", { class: "cell-symbol" }, [sym.name, Utils.el("span", { class: "cell-muted cell-mono" }, [" " + sym.id])])]));
+    tr.appendChild(Utils.el("td", {}, [Utils.el("span", { class: "category-tag" }, [sym.category])]));
+
+    const priceCell = Utils.el("td", { class: "cell-mono" }, [row ? Utils.formatPrice(row.price) : "—"]);
+    tr.appendChild(priceCell);
+    tr.appendChild(Utils.el("td", { class: "cell-mono cell-muted" }, ["—"]));
+
+    const trendBadge = this._trendBadge(row && row.trend);
+    tr.appendChild(Utils.el("td", {}, [trendBadge]));
+
+    const scoreCell = Utils.el("td", { class: "cell-mono cell-muted" }, [row && row.score && row.score.score !== null ? String(row.score.score) : "—"]);
+    tr.appendChild(scoreCell);
+
+    const entryBadge = this._entryBadge(row && row.entry);
+    tr.appendChild(Utils.el("td", {}, [entryBadge]));
+
+    const updatedCell = Utils.el("td", { class: "cell-muted cell-mono" }, [row ? Utils.formatRelative(row.updatedAt) : "—"]);
+    tr.appendChild(updatedCell);
+
+    // Cache refs so live scan ticks can patch this exact row's cells in
+    // place (see _updateSymbolRow) without a querySelector or a rebuild.
+    this._symbolRowEls.set(sym.id, { tr, priceCell, trendBadge, scoreCell, entryBadge, updatedCell });
+
+    return tr;
+  }
+
+  /** Briefly highlights the row for `symbolId` in every table that currently renders it. */
+  _flashRow(symbolId) {
+    [this._symbolRowEls.get(symbolId), this._watchingRowEls.get(symbolId)].forEach((refs) => {
+      if (!refs) return;
+      const tr = refs.tr;
+      tr.classList.remove("row-signal-flash");
+      // Force a reflow so re-adding the class restarts the CSS animation
+      // even if this row was flashed a moment ago (e.g. two quick triggers).
+      void tr.offsetWidth;
+      tr.classList.add("row-signal-flash");
+      window.setTimeout(() => tr.classList.remove("row-signal-flash"), 2600);
+    });
+  }
+
+  _updateSymbolRow(symbolId, row) {
+    const refs = this._symbolRowEls.get(symbolId);
+    if (!refs) return; // filtered out / not currently rendered
+    Utils.setText(refs.priceCell, Utils.formatPrice(row.price));
+    this._applyTrendBadge(refs.trendBadge, row.trend);
+    Utils.setText(refs.scoreCell, row.score && row.score.score !== null ? String(row.score.score) : "—");
+    this._applyEntryBadge(refs.entryBadge, row.entry);
+    Utils.setText(refs.updatedCell, Utils.formatRelative(row.updatedAt));
+  }
+
+  /* ---------- badge logic: pure (text, class) derivation + DOM application ----------
+     Splitting derivation from DOM writes lets both the initial build (which
+     creates a badge element) and every subsequent live update (which mutates
+     an existing one) share one source of truth, and lets updates skip the
+     DOM write entirely when nothing actually changed. */
+
+  _trendBadgeInfo(trend) {
+    if (!trend || trend.status === "not_implemented") return { text: "Pending", cls: "badge-pending" };
+    if (trend.status === "insufficient_data") return { text: "Gathering data…", cls: "badge-pending" };
+    if (trend.status === "no_data") return { text: "No data", cls: "badge-pending" };
+    const map = {
+      "Strong Bullish": "badge-bull", "Bullish": "badge-bull",
+      "Mixed": "badge-neutral",
+      "Bearish": "badge-bear", "Strong Bearish": "badge-bear"
+    };
+    return { text: trend.bias || "—", cls: map[trend.bias] || "badge-neutral" };
+  }
+
+  _trendBadge(trend) {
+    const { text, cls } = this._trendBadgeInfo(trend);
+    return Utils.el("span", { class: `badge ${cls}` }, [text]);
+  }
+
+  _applyTrendBadge(el, trend) {
+    const { text, cls } = this._trendBadgeInfo(trend);
+    this._applyBadge(el, cls, text);
+  }
+
+  _entryBadgeInfo(entry) {
+    if (!entry || entry.status === "not_implemented") return { text: "Pending", cls: "badge-neutral" };
+    if (entry.status === "no_data") return { text: "No data", cls: "badge-pending" };
+    if (entry.status === "insufficient_data") return { text: "Gathering data…", cls: "badge-pending" };
+
+    const state = entry.state || "Idle";
+    if (state === "Triggered" && entry.signal) return { text: `${entry.signal.direction} signal`, cls: "badge-bull" };
+    if (state === "Watching" && entry.setup) return { text: `Watching ${entry.setup.direction} (${entry.setup.countdown})`, cls: "badge-warn" };
+    if (state === "Expired") return { text: "Expired", cls: "badge-neutral" };
+    return { text: "Idle", cls: "badge-neutral" };
+  }
+
+  _entryBadge(entry) {
+    const { text, cls } = this._entryBadgeInfo(entry);
+    return Utils.el("span", { class: `badge ${cls}` }, [text]);
+  }
+
+  _applyEntryBadge(el, entry) {
+    const { text, cls } = this._entryBadgeInfo(entry);
+    this._applyBadge(el, cls, text);
+  }
+
+  /** Writes class/text onto an existing badge element only where it actually changed. */
+  _applyBadge(el, cls, text) {
+    const fullClass = `badge ${cls}`;
+    if (el.className !== fullClass) el.className = fullClass;
+    Utils.setText(el, text);
+  }
+
+  /**
+   * Splits the Entry Engine's combined state into the individual fields the
+   * Watching panel displays as their own columns: Status (the state machine
+   * state), Countdown, Signal Direction, and Detection Time.
+   */
+  _entryDetails(entry) {
+    if (!entry || entry.status === "not_implemented") {
+      return { state: "Pending", stateCls: "badge-pending", direction: "—", countdown: "—", detectionTime: null };
+    }
+    if (entry.status === "no_data") {
+      return { state: "No data", stateCls: "badge-pending", direction: "—", countdown: "—", detectionTime: null };
+    }
+    if (entry.status === "insufficient_data") {
+      return { state: "Gathering data…", stateCls: "badge-pending", direction: "—", countdown: "—", detectionTime: null };
+    }
+
+    const state = entry.state || "Idle";
+    const stateClsMap = { Idle: "badge-neutral", Watching: "badge-warn", Triggered: "badge-bull", Expired: "badge-neutral" };
+    const setup = entry.setup;
+    return {
+      state,
+      stateCls: stateClsMap[state] || "badge-neutral",
+      direction: setup ? setup.direction : "—",
+      countdown: (setup && state === "Watching") ? String(setup.countdown) : "—",
+      detectionTime: setup ? setup.detectionTime : null
+    };
+  }
+
+  _starIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "currentColor");
+    svg.innerHTML = '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
+    return svg;
+  }
+
+  /* ---------- watching / signals / history panels ---------- */
+
+  _renderWatchingPanel() {
+    const watchlist = this._state.get("watchlist") || [];
+    const symbolsState = this._state.get("symbols") || {};
+    const container = this._dom.watchingBody;
+    this._dom.watchingCountPill.textContent = `${watchlist.length} symbol${watchlist.length === 1 ? "" : "s"}`;
+    this._dom.badgeWatching.textContent = String(watchlist.length);
+
+    this._watchingRowEls.clear();
+
+    if (watchlist.length === 0) {
+      container.innerHTML = "";
+      container.appendChild(this._emptyState(
+        this._eyeIcon(),
+        "Nothing watched yet",
+        "Star symbols from the Scanner panel, or pick them in Settings, to track them here."
+      ));
+      return;
+    }
+
+    const table = Utils.el("table", { class: "data-table" }, [
+      Utils.el("thead", {}, [Utils.el("tr", {}, [
+        Utils.el("th", {}, ["Symbol"]),
+        Utils.el("th", {}, ["Price"]),
+        Utils.el("th", {}, ["Trend"]),
+        Utils.el("th", {}, ["Trend Score"]),
+        Utils.el("th", {}, ["Status"]),
+        Utils.el("th", {}, ["Countdown"]),
+        Utils.el("th", {}, ["Direction"]),
+        Utils.el("th", {}, ["Detection Time"]),
+        Utils.el("th", {}, ["Updated"]),
+        Utils.el("th", { style: "width:70px" }, [""])
+      ])]),
+      Utils.el("tbody", {}, watchlist.map((symbolId) => {
+        const meta = Config.SYMBOLS.find((s) => s.id === symbolId);
+        if (!meta) return null;
+        return this._buildWatchingRow(symbolId, meta, symbolsState[symbolId]);
+      }).filter(Boolean))
+    ]);
+    container.innerHTML = "";
+    container.appendChild(table);
+  }
+
+  _buildWatchingRow(symbolId, meta, row) {
+    const details = this._entryDetails(row && row.entry);
+
+    const priceCell = Utils.el("td", { class: "cell-mono" }, [row ? Utils.formatPrice(row.price) : "—"]);
+    const trendBadge = this._trendBadge(row && row.trend);
+    const scoreCell = Utils.el("td", { class: "cell-mono cell-muted" }, [row && row.score && row.score.score !== null ? String(row.score.score) : "—"]);
+    const statusBadge = Utils.el("span", { class: `badge ${details.stateCls}` }, [details.state]);
+    const countdownCell = Utils.el("td", { class: "cell-mono" }, [details.countdown]);
+    const directionCell = Utils.el("td", {}, [details.direction]);
+    const detectionCell = Utils.el("td", { class: "cell-mono cell-muted" }, [details.detectionTime ? Utils.formatTime(details.detectionTime) : "—"]);
+    const updatedCell = Utils.el("td", { class: "cell-muted cell-mono" }, [row ? Utils.formatRelative(row.updatedAt) : "—"]);
+
+    const tr = Utils.el("tr", { dataset: { symbolId } }, [
+      Utils.el("td", {}, [Utils.el("div", { class: "cell-symbol" }, [meta.name])]),
+      priceCell,
+      Utils.el("td", {}, [trendBadge]),
+      scoreCell,
+      Utils.el("td", {}, [statusBadge]),
+      countdownCell,
+      directionCell,
+      detectionCell,
+      updatedCell,
+      Utils.el("td", {}, [Utils.el("button", { class: "btn btn-sm", onclick: () => this._toggleWatch(symbolId, false) }, ["Remove"])])
+    ]);
+
+    // Cache refs so live scan ticks patch this row in place (see
+    // _updateWatchingRow) instead of the panel being rebuilt every cycle.
+    this._watchingRowEls.set(symbolId, {
+      tr, priceCell, trendBadge, scoreCell, statusBadge, countdownCell, directionCell, detectionCell, updatedCell
+    });
+
+    return tr;
+  }
+
+  _updateWatchingRow(symbolId, row) {
+    const refs = this._watchingRowEls.get(symbolId);
+    if (!refs) return; // not currently watched / rendered
+
+    Utils.setText(refs.priceCell, Utils.formatPrice(row.price));
+    this._applyTrendBadge(refs.trendBadge, row.trend);
+    Utils.setText(refs.scoreCell, row.score && row.score.score !== null ? String(row.score.score) : "—");
+
+    const details = this._entryDetails(row.entry);
+    this._applyBadge(refs.statusBadge, details.stateCls, details.state);
+    Utils.setText(refs.countdownCell, details.countdown);
+    Utils.setText(refs.directionCell, details.direction);
+    Utils.setText(refs.detectionCell, details.detectionTime ? Utils.formatTime(details.detectionTime) : "—");
+    Utils.setText(refs.updatedCell, Utils.formatRelative(row.updatedAt));
+  }
+
+  _renderActiveSignals() {
+    const signals = this._state.get("activeSignals") || [];
+    const container = this._dom.signalsBody;
+    this._dom.signalsCountPill.textContent = `${signals.length} active`;
+    this._dom.badgeSignals.textContent = String(signals.length);
+
+    container.innerHTML = "";
+    if (signals.length === 0) {
+      container.appendChild(this._emptyState(
+        this._pulseIcon(),
+        "No active signals",
+        "Once the Entry Engine is implemented, qualifying entries will appear here in real time."
+      ));
+      return;
+    }
+    // Rendering path for future real signals (kept minimal - Entry Engine
+    // is still a placeholder and will define the exact signal shape).
+    const list = Utils.el("ul", {}, signals.map((sig) => Utils.el("li", {}, [JSON.stringify(sig)])));
+    container.appendChild(list);
+  }
+
+  _renderSignalHistory() {
+    const history = this._state.get("signalHistory") || [];
+    const container = this._dom.historyBody;
+    this._dom.historyCountPill.textContent = `${history.length} records`;
+    this._dom.badgeHistory.textContent = String(history.length);
+
+    container.innerHTML = "";
+    if (history.length === 0) {
+      container.appendChild(this._emptyState(
+        this._clockIcon(),
+        "No signal history yet",
+        "Past signals and their outcomes will be logged here once scanning produces results."
+      ));
+      return;
+    }
+    const list = Utils.el("ul", {}, history.map((rec) => Utils.el("li", {}, [JSON.stringify(rec)])));
+    container.appendChild(list);
+  }
+
+  _emptyState(iconSvg, title, desc) {
+    return Utils.el("div", { class: "empty-state" }, [iconSvg, Utils.el("div", { class: "empty-state-title" }, [title]), Utils.el("div", { class: "empty-state-desc" }, [desc])]);
+  }
+
+  _eyeIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.6");
+    svg.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    return svg;
+  }
+  _pulseIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.6");
+    svg.innerHTML = '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/>';
+    return svg;
+  }
+  _clockIcon() {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("fill", "none"); svg.setAttribute("stroke", "currentColor"); svg.setAttribute("stroke-width", "1.6");
+    svg.innerHTML = '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/>';
+    return svg;
+  }
+
+  /* ---------- clock ---------- */
+
+  _startClock() {
+    const tick = () => { this._dom.headerClock.textContent = Utils.formatTime(new Date()); };
+    tick();
+    window.setInterval(tick, 1000);
+  }
+}
+
+
+/* ============================================================================
+   APP BOOTSTRAP
+   ==========================================================================*/
+const App = (() => {
+  let modules = {};
+
+  function setLoadingProgress(pct, label) {
+    const fill = Utils.qs("#loading-bar-fill");
+    const text = Utils.qs("#loading-status-text");
+    if (fill) fill.style.width = pct + "%";
+    if (text && label) text.textContent = label;
+  }
+
+  async function init() {
+    const steps = [
+      ["Loading configuration…", 10],
+      ["Preparing application state…", 25],
+      ["Loading settings…", 40],
+      ["Wiring analytical modules…", 60],
+      ["Starting data feed…", 80],
+      ["Preparing dashboard…", 95]
+    ];
+    let i = 0;
+    const nextStep = () => {
+      if (i >= steps.length) return;
+      const [label, pct] = steps[i++];
+      setLoadingProgress(pct, label);
+    };
+
+    nextStep(); // config
+    await wait(120);
+
+    const eventBus = new EventBus();
+    const stateManager = new StateManager(eventBus);
+    nextStep(); // state
+    await wait(120);
+
+    const settingsManager = new SettingsManager(eventBus, stateManager);
+    settingsManager.init();
+    nextStep(); // settings
+    await wait(120);
+
+    const dataFeed = new DataFeedManager(eventBus, stateManager);
+    const trendEngine = new TrendEngine(eventBus, stateManager, dataFeed);
+    const scoreCalculator = new TrendScoreCalculator(eventBus, stateManager);
+    const entryEngine = new EntryEngine(eventBus, stateManager, trendEngine, dataFeed);
+    const scannerManager = new ScannerManager({
+      eventBus, stateManager, dataFeed, trendEngine, scoreCalculator, entryEngine, settingsManager
+    });
+    const alertsManager = new AlertsManager(eventBus, stateManager, settingsManager);
+    alertsManager.init();
+    nextStep(); // analytical modules
+    await wait(120);
+
+    // Apply the persisted timeframe selection, then subscribe the data feed
+    // to every symbol currently on the watchlist so live candle streams
+    // start flowing as soon as the connection is established.
+    dataFeed.setTimeframes(settingsManager.get("timeframes"));
+    (stateManager.get("watchlist") || []).forEach((symbolId) => dataFeed.subscribeSymbol(symbolId));
+    stateManager.subscribe("watchlist", ({ value }) => {
+      dataFeed.getSubscribedSymbols().forEach((id) => { if (!value.includes(id)) dataFeed.unsubscribeSymbol(id); });
+      value.forEach((id) => dataFeed.subscribeSymbol(id));
+    });
+    eventBus.on("datafeed:error", ({ message }) => {
+      alertsManager.showToast("error", "Data feed error", message);
+    });
+    dataFeed.connect();
+    nextStep(); // data feed
+    await wait(150);
+
+    const dashboardUI = new DashboardUI({ eventBus, stateManager, settingsManager, dataFeed, scannerManager, alertsManager });
+    dashboardUI.init();
+    nextStep(); // dashboard
+    await wait(150);
+
+    if (settingsManager.get("autoStartScanner")) scannerManager.start();
+
+    modules = { eventBus, stateManager, settingsManager, dataFeed, trendEngine, scoreCalculator, entryEngine, scannerManager, alertsManager, dashboardUI };
+
+    setLoadingProgress(100, "Ready");
+    await wait(200);
+    revealApp();
+  }
+
+  function wait(ms) { return new Promise((resolve) => window.setTimeout(resolve, ms)); }
+
+  function revealApp() {
+    const loadingScreen = Utils.qs("#loading-screen");
+    const app = Utils.qs("#app");
+    app.hidden = false;
+    loadingScreen.classList.add("is-hidden");
+    window.setTimeout(() => { loadingScreen.style.display = "none"; }, 450);
+  }
+
+  return { init, getModules: () => modules };
+})();
+
+document.addEventListener("DOMContentLoaded", () => { App.init(); });
+
+// Exposed for debugging / later-phase console access only - not part of the
+// documented public architecture.
+window.__derivScanner = App;
+</script>
+</body>
+</html>
